@@ -1,0 +1,27 @@
+# Render deploy configuration for the Longboard Technology tools.
+# Lives at the repo root (deploy/render.yaml). The actual Flask app + code
+# lives in the Render/ subfolder; `rootDir: Render` tells Render to treat
+# that subfolder as the build root, so `requirements.txt`, `site_app.py`,
+# `generators/`, `assets/`, and `site/` are resolved relative to it.
+#
+# Free tier behaviour:
+#   - 512 MB RAM, shared CPU
+#   - Service spins down after ~15 min of inactivity
+#   - First request after spin-down takes ~30 s to wake (cold start)
+#   - Public URL: <service-name>.onrender.com (lt-tools.onrender.com)
+#   - Custom domain: tools.longboardtechnology.com (CNAME at user's DNS)
+#
+# Auto-deploys on every push to the default branch. To upgrade to always-on
+# later: change `plan: free` → `plan: starter` ($7/mo). Same URL, no
+# migration.
+
+services:
+  - type: web
+    name: lt-tools
+    rootDir: Render
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn site_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    autoDeploy: true
+    healthCheckPath: /
