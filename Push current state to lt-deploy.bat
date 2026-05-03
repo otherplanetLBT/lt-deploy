@@ -1,3 +1,3 @@
 git add .
-git commit -m "Pivot Cup library MVP: 'Browse library' link in Parameters section header (opens connected Google Sheet) + 'Submit to library' button below Download (opens Tally form with current params prefilled, submissions land in the sheet via Tally Connect). Generalised LT.openFeedback to host any Tally form via opts.formUrl/title/fields, kept Mission Report calls back-compatible."
+git commit -m "Pivot Cup library MVP wired up: Tally form ID + Sheet URL filled in. Tally modal scaled tighter (12px outer padding, 8px header padding, 480px iframe min-height) so the Library Submission form's longer field list fits without inner scroll on most desktop viewports."
 git push origin main
