@@ -377,6 +377,14 @@ a { color: inherit; }
 .spinner.visible { display: block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Page load-in animation — pages stagger nav → header → sidebar → viewport
+   so the initial "blank" moment before geometry renders fills with motion
+   instead of dead space. Mirrors the holding page's fadeUp pattern. */
+@keyframes ltFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Validation messages ──────────────────────────────────────────────────── */
 .validation-msg {
   font-size: 0.7rem;

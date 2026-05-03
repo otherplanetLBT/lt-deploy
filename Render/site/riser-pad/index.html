@@ -195,6 +195,14 @@
       padding: 4px 10px; border-radius: 20px; pointer-events: none; display: none;
     }
 
+    /* Page load-in cascade — see ltFadeUp in shared.css. Four-step stagger
+       buys ~1s of motion while the first preview is generating, hiding the
+       moment of dead canvas behind a deliberate entrance. */
+    .site-nav   { animation: ltFadeUp 0.8s 0s    both; }
+    .gen-header { animation: ltFadeUp 0.8s 0.15s both; }
+    .sidebar    { animation: ltFadeUp 0.8s 0.3s  both; }
+    .viewport   { animation: ltFadeUp 0.8s 0.45s both; }
+
     /* ── Mobile ── */
     @media (max-width: 640px) {
       .body { flex-direction: column-reverse; }

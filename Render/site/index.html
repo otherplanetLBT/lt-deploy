@@ -131,6 +131,15 @@
     max-width: 480px;
     line-height: 1.6;
   }
+
+  /* Page load-in cascade — see ltFadeUp keyframes in shared.css */
+  .site-nav     { animation: ltFadeUp 0.8s 0s     both; }
+  .badge        { animation: ltFadeUp 0.8s 0.2s   both; }
+  .headline     { animation: ltFadeUp 0.8s 0.35s  both; }
+  .sub          { animation: ltFadeUp 0.8s 0.5s   both; }
+  .tool-card:nth-of-type(1) { animation: ltFadeUp 0.8s 0.65s both; }
+  .tool-card:nth-of-type(2) { animation: ltFadeUp 0.8s 0.8s  both; }
+  .note         { animation: ltFadeUp 0.8s 0.95s  both; }
 </style>
 </head>
 <body>
@@ -139,7 +148,7 @@
 <div class="nav-accent-bar"></div>
 <nav class="site-nav">
   <canvas class="starfield-nav" aria-hidden="true"></canvas>
-  <a class="nav-logo" href="/">Longboard<span>Technology</span></a>
+  <a class="nav-logo" href="https://longboardtechnology.com">Longboard<span>Technology</span></a>
   <ul class="nav-links">
     <li><a href="/pivot-cup/">Pivot Cup</a></li>
     <li><a href="/riser-pad/">Riser Pad</a></li>
