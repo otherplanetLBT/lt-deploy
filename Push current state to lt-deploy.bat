@@ -1,3 +1,3 @@
 git add .
-git commit -m "Page-naming convention canonicalized (Landing / Tools / Pivot Cup Generator / Riser Pad Generator); terminology unified across all docs and code comments; Kit account fully retired; new /api/health endpoint on Flask + warmup-ping fetch on Landing page so Render's free-tier cold start is mostly absorbed by reading time"
+git commit -m "Pivot Cup library MVP: 'Browse library' link in Parameters section header (opens connected Google Sheet) + 'Submit to library' button below Download (opens Tally form with current params prefilled, submissions land in the sheet via Tally Connect). Generalised LT.openFeedback to host any Tally form via opts.formUrl/title/fields, kept Mission Report calls back-compatible."
 git push origin main

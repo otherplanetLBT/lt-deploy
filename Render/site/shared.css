@@ -227,6 +227,25 @@ a { color: inherit; }
 .btn-feedback:hover { color: var(--text); background: var(--surface-2); }
 .btn-feedback:active { transform: translateY(1px); }
 
+/* Library submit — sits above .btn-feedback in the "give back" zone. Slightly
+   louder than .btn-feedback because it's the higher-volume positive-valence
+   contribution (sharing a working cup vs. filing a problem). Same structural
+   treatment, but full-strength text colour by default and an accent hover so
+   it reads as a real call-to-action without competing with the primary
+   Preview/Download row above. */
+.btn-library {
+  background: none; color: var(--text); border: none;
+  padding: 9px 12px;
+  font-family: var(--display);
+  font-size: 0.62rem; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  cursor: pointer; text-align: center; width: 100%;
+  min-height: 0; border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.btn-library:hover { color: var(--accent); background: var(--accent-dim); }
+.btn-library:active { transform: translateY(1px); }
+
 .btn-row { display: flex; flex-direction: column; gap: 8px; }
 @media (max-width: 640px) { .btn-row { flex-direction: row; } }
 

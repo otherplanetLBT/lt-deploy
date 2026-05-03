@@ -589,18 +589,20 @@
   }
 
   // ============================================================================
-  // Mission report (feedback form modal)
+  // Tally form modal (Mission Report + Library Submission share this)
   // ============================================================================
-  // Opens an in-page modal containing the Tally feedback form, with the user's
-  // current tool and inputs already filled in via URL params. Page-side handlers
-  // just supply the params dictionary; this helper handles URL construction,
-  // context capture, and modal lifecycle.
+  // Opens an in-page modal hosting a Tally form, with prefilled URL params
+  // captured from the page. Same modal infrastructure is reused for any
+  // Tally form the project hosts — Mission Report is the original use; the
+  // pivot-cup library submission form was added in session 12.
   //
-  // SETUP: edit `feedbackConfig.formUrl` below. Either share URL form works —
-  // `tally.so/r/<id>` is auto-converted to `tally.so/embed/<id>` for clean
-  // iframe embedding.
+  // SETUP per form: each Tally form is built in the Tally dashboard, its
+  // share URL grabbed (`tally.so/r/<id>`), and the URL parameter names of its
+  // fields configured to match what the page sends. The page passes the URL
+  // either via `opts.formUrl` (per-call) or via `LT.feedbackConfig.formUrl`
+  // (global default for backward-compatible Mission Report calls).
   //
-  // The Tally form should expose URL parameters for these field keys:
+  // Mission Report form fields (URL-parameter names — original use):
   //   tool         — short answer (hidden)   e.g. "Pivot Cup"
   //   inputs       — long answer  (hidden)   e.g. "Mode: pointed | Pivot diameter: 10.0 mm | …"
   //   page_url     — short answer (hidden)
@@ -608,7 +610,22 @@
   //   suggestions  — long answer  (visible: "Suggestions/Problems")
   //   comments     — long answer  (visible: "Comments")
   //   email        — email        (visible, optional)
-  // In Tally, set each field's "URL parameter" name to match these keys.
+  //
+  // Library Submission form fields (URL-parameter names — pivot-cup library):
+  //   mode         — short answer (hidden)   e.g. "pointed"
+  //   pivot_d      — number       (hidden)
+  //   pivot_l      — number       (hidden)
+  //   socket_d     — number       (hidden)
+  //   socket_depth — number       (hidden)
+  //   page_url     — short answer (hidden)
+  //   browser      — short answer (hidden)
+  //   truck_brand  — short answer (visible, REQUIRED)
+  //   truck_model  — short answer (visible, optional)
+  //   source       — single select (visible, REQUIRED, options: "measured", "dialed")
+  //   handle       — short answer (visible, optional, prompt for an alias not real name)
+  //   notes        — long answer  (visible, optional)
+  //
+  // The URL-parameter-name mapping is set in Tally's per-field settings.
   const feedbackConfig = {
     formUrl: 'https://tally.so/r/9q2Wxp',
   };
@@ -673,34 +690,57 @@
 
   function openFeedback(opts) {
     opts = opts || {};
-    const cfg = window.LT.feedbackConfig || feedbackConfig;
-    if (!cfg.formUrl || cfg.formUrl.indexOf('REPLACE') !== -1) {
-      alert('The feedback form is not wired up yet — sit tight!');
+
+    // Form URL: explicit per-call wins; else fall back to the global Mission
+    // Report config (back-compat for the original feedback callers).
+    const cfg     = (window.LT && window.LT.feedbackConfig) || feedbackConfig;
+    const formUrl = opts.formUrl || cfg.formUrl;
+    const title   = opts.title   || 'Mission Report';
+
+    if (!formUrl || formUrl.indexOf('REPLACE') !== -1) {
+      alert('This form is not wired up yet — sit tight!');
       return;
     }
     let url;
-    try { url = new URL(cfg.formUrl); }
-    catch (e) { console.error('Bad feedback formUrl:', cfg.formUrl); return; }
+    try { url = new URL(formUrl); }
+    catch (e) { console.error('Bad form URL:', formUrl); return; }
 
     // Convert tally.so/r/<id> → tally.so/embed/<id> for clean iframe embedding.
     url.pathname = url.pathname.replace('/r/', '/embed/');
 
-    // Tally embed display flags. We keep Tally's form title visible (it reads
-    // "STL Generator User Feedback Form") — our modal header above it carries
-    // the action label "Mission Report"; the two stack cleanly.
+    // Tally embed display flags. We keep Tally's form title visible — our
+    // modal header above it carries the action label (e.g. "Mission Report");
+    // the two stack cleanly.
     url.searchParams.set('transparentBackground', '1');
     url.searchParams.set('dynamicHeight', '1');     // Tally posts height events; see listener below
     url.searchParams.set('alignLeft', '1');
 
-    // Prefill data — page-supplied tool + inputs, plus auto-context.
-    const params = opts.params || {};
-    const inputs = Object.keys(params).map(k => k + ': ' + params[k]).join(' | ');
-    if (opts.tool) url.searchParams.set('tool', opts.tool);
-    if (inputs)    url.searchParams.set('inputs', inputs);
+    // Auto-context — every form gets these.
     url.searchParams.set('page_url', window.location.href);
     url.searchParams.set('browser',  navigator.userAgent);
 
+    // Mission-Report-style prefill: a `tool` label + a flattened `inputs`
+    // string. Used by the original feedback caller; kept for back-compat.
+    if (opts.tool) url.searchParams.set('tool', opts.tool);
+    if (opts.params) {
+      const params = opts.params;
+      const inputs = Object.keys(params).map(k => k + ': ' + params[k]).join(' | ');
+      if (inputs) url.searchParams.set('inputs', inputs);
+    }
+
+    // Library-style prefill: structured fields go straight to their own Tally
+    // URL parameter (one column each in the connected Google Sheet). Pass any
+    // raw key/value pairs the form expects.
+    if (opts.fields) {
+      Object.keys(opts.fields).forEach(k => {
+        url.searchParams.set(k, opts.fields[k]);
+      });
+    }
+
     const modal = ensureFeedbackModal();
+    // Title is per-open — the same modal hosts different forms with different
+    // headers ("Mission Report" / "Submit to Library" / etc.).
+    modal.querySelector('.feedback-title').textContent = title;
     modal.querySelector('.feedback-iframe').src = url.toString();
     modal.classList.add('visible');
     document.body.style.overflow = 'hidden';

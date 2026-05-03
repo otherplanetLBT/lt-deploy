@@ -67,6 +67,20 @@
       display: flex; align-items: center; gap: 8px;
     }
     .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    /* Variant: section label with a trailing inline link (e.g. "Browse library →"
+       on the Parameters section). Suppresses the auto-rule and uses an explicit
+       <span class="section-rule"> placed before the link instead, so the link
+       sits at the right edge with the rule filling the space between it and the
+       label. Link is quietly styled — same uppercase mono treatment as the label
+       so it reads as part of the section header, not as a competing CTA. */
+    .section-label.section-label-with-link::after { display: none; }
+    .section-label .section-rule { flex: 1; height: 1px; background: var(--border); }
+    .section-label .section-link {
+      font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--text-dim); text-decoration: none; white-space: nowrap;
+      transition: color 0.15s;
+    }
+    .section-label .section-link:hover { color: var(--accent); }
 
     /* Mode selector */
     .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -353,7 +367,11 @@
 
         <!-- Parameters -->
         <div>
-          <div class="section-label">Parameters</div>
+          <div class="section-label section-label-with-link">
+            <span>Parameters</span>
+            <span class="section-rule"></span>
+            <a id="link-browse-library" class="section-link" href="#" target="_blank" rel="noopener">Browse library →</a>
+          </div>
           <div style="display:flex;flex-direction:column;gap:20px;">
 
             <div class="control-row">
@@ -461,6 +479,13 @@
             Download STL
           </button>
         </div>
+
+        <!-- "Engage with the project" zone — divider separates it from the
+             tool-action zone above. Submit-to-Library is the higher-volume
+             positive contribution (sharing a working cup); Mission Report is
+             the quieter, problem-oriented contribution. -->
+        <div class="divider"></div>
+        <button class="btn-library" id="btn-library-submit" type="button">Submit to library</button>
         <button class="btn-feedback" id="btn-feedback" type="button">Mission report</button>
 
       </div>
@@ -871,6 +896,59 @@ document.getElementById('btn-feedback').addEventListener('click', () => {
     'Socket depth':    f(sdep),
   };
   LT.openFeedback({ tool: 'Pivot Cup', params });
+});
+
+// ── Library: browse + submit ─────────────────────────────────────────────────
+// Beta-quality library: a Tally form collects submissions into a Google Sheet,
+// and "Browse library" opens that Sheet in a new tab so visitors can see real
+// entries (necessary for trust — nobody contributes if contributions go into
+// a black box). Phase 2 swaps Sheet-in-new-tab for an in-page picker modal
+// that fetches the Sheet's published-JSON and auto-fills params on click.
+//
+// SETUP REQUIRED: paste the Tally form share URL and the Google Sheet public
+// URL below. Until both are filled in, the buttons show a "not wired up yet"
+// message rather than navigating to invalid destinations.
+const LIBRARY_FORM_URL  = 'https://tally.so/r/obl7XV';
+const LIBRARY_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1ltf6CumwT53w_SURW8-MOa4drBunUfsY2-hRgPz9qXw/edit?usp=sharing';
+
+// Browse Library — currently just opens the Google Sheet. The <a> already has
+// target="_blank" + rel="noopener" so all we do here is keep the href in sync
+// with the constant above and show a friendly message until it's wired up.
+(function wireBrowseLibrary() {
+  const link = document.getElementById('link-browse-library');
+  if (!link) return;
+  if (LIBRARY_SHEET_URL.indexOf('REPLACE_ME') !== -1) {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      alert('The library sheet is not wired up yet — sit tight!');
+    });
+  } else {
+    link.href = LIBRARY_SHEET_URL;
+  }
+})();
+
+// Submit to Library — opens a Tally form with the current effective parameters
+// prefilled. Tally's URL-parameter prefill maps each key to a hidden form
+// field (mode, pivot_d, pivot_l, socket_d, socket_depth); the visible fields
+// on the form are truck_brand (required), truck_model, source ("measured" /
+// "dialed"), handle, and notes. Tally → connected Google Sheet → row appears
+// for the user (and everyone else) to browse via the Sheet link above.
+document.getElementById('btn-library-submit').addEventListener('click', () => {
+  const { mode, pdEff: pd, plEff: pl, sdEff: sd, sdepEff: sdep } = state;
+  // Keep numeric precision modest — three decimals is what we send to the
+  // server for STL generation; same precision is fine for the Sheet.
+  const fields = {
+    mode:         mode,
+    pivot_d:      pd.toFixed(3),
+    pivot_l:      mode === 'tube' ? '' : pl.toFixed(3),
+    socket_d:     sd.toFixed(3),
+    socket_depth: sdep.toFixed(3),
+  };
+  LT.openFeedback({
+    formUrl: LIBRARY_FORM_URL,
+    title:   'Submit to Library',
+    fields:  fields,
+  });
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
