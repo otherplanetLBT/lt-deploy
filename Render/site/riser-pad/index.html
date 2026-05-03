@@ -111,23 +111,87 @@
       font-variant-numeric: tabular-nums; white-space: nowrap;
       flex-shrink: 0; text-align: right;
     }
-    .control-sub { font-size: 0.68rem; color: var(--text-dim); }
 
-    /* Slider — markers come from shared.css (.slider-marker.is-min / .is-max) */
+    /* Slider — markers come from shared.css (.slider-marker.is-min / .is-max).
+       Track is a CSS-var-driven gradient: the portion of the track inside the
+       active clamp window (--clamp-min-pct → --clamp-max-pct, set per-slider
+       by shared.js) uses --border; outside the clamps it dims so you can SEE
+       the dead zones rather than hitting them by surprise. Both vars default
+       to 0%/100% if shared.js hasn't pushed values yet. Mirrors pivot cup. */
     .slider-wrap { position: relative; }
     .slider-wrap input[type=range] { display: block; width: 100%; }
 
     input[type=range] {
       -webkit-appearance: none; width: 100%; height: 5px;
-      border-radius: 4px; background: var(--border); outline: none; cursor: pointer;
+      border-radius: 4px; outline: none; cursor: pointer;
+      --clamp-min-pct: 0%;
+      --clamp-max-pct: 100%;
+      background:
+        linear-gradient(
+          to right,
+          rgba(0, 0, 0, 0.20) 0%,
+          rgba(0, 0, 0, 0.20) var(--clamp-min-pct),
+          var(--border)       var(--clamp-min-pct),
+          var(--border)       var(--clamp-max-pct),
+          rgba(0, 0, 0, 0.20) var(--clamp-max-pct),
+          rgba(0, 0, 0, 0.20) 100%
+        );
     }
+    /* Thumb — small white dot. .active (toggled by shared.js on the most-
+       recently-interacted slider) bumps it up a notch and overlays a soft
+       green glow that fades into the white — recency marker + center hint. */
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 20px; height: 20px;
-      border-radius: 50%; background: var(--white); border: 2px solid var(--bg); cursor: pointer;
+      -webkit-appearance: none; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--white); border: 2px solid var(--bg);
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.25); cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
     }
     input[type=range]::-moz-range-thumb {
-      width: 20px; height: 20px;
-      border-radius: 50%; background: var(--white); border: 2px solid var(--bg); cursor: pointer;
+      width: 14px; height: 14px;
+      border-radius: 50%; background: var(--white); border: 2px solid var(--bg);
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.25); cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
+    }
+    input[type=range].active::-webkit-slider-thumb {
+      width: 17px; height: 17px;
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        var(--white);
+    }
+    input[type=range].active::-moz-range-thumb {
+      width: 17px; height: 17px;
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        var(--white);
+    }
+    input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.15); box-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
+    input[type=range]:hover::-moz-range-thumb     { transform: scale(1.15); box-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
+    /* Clamped — stored value is pinned by an active soft-clamp. White dims so
+       the thumb reads "you can't push past this." Active+clamped keeps the
+       green glow (recency signal) and only darkens the surrounding white. */
+    input[type=range].clamped::-webkit-slider-thumb {
+      background: rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].clamped::-moz-range-thumb {
+      background: rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].active.clamped::-webkit-slider-thumb {
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].active.clamped::-moz-range-thumb {
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        rgba(255, 255, 255, 0.45);
     }
 
     .stats-card {
@@ -300,11 +364,10 @@
               <div class="slider-marker is-min" id="min-marker-height"></div>
               <div class="slider-marker is-max" id="max-marker-height"></div>
             </div>
-            <span class="control-sub">Height at mid-length of pad</span>
           </div>
 
           <!-- Angle -->
-          <div class="control-row" style="margin-top:14px;">
+          <div class="control-row" style="margin-top:22px;">
             <div class="control-header">
               <div class="control-name-wrap">
                 <span class="control-name">Wedge Angle</span>
@@ -318,7 +381,6 @@
               <div class="slider-marker is-min" id="min-marker-angle"></div>
               <div class="slider-marker is-max" id="max-marker-angle"></div>
             </div>
-            <span class="control-sub">0° = flat riser</span>
           </div>
         </div>
 
@@ -512,9 +574,10 @@ const heightCtrl = LT.SliderControl({
   onInput: (mm, source) => {
     state.heightStored = mm;
     if (source === 'drag') dragWinner = 'height';
-    // 'type' commit: leave dragWinner unchanged; storedMM was already
-    // clamped to textMin/textMax inside the control. Page-level clamp to
-    // current valid range is applied below.
+    // Type commit: clamp to current valid range (drag yields normally — the
+    // riser pad's only cross-constraint (thin_end >= MIN_WALL) can't push
+    // either slider's range to inversion within the visible slider bounds,
+    // so there's no "brackets would cross" case to guard against here).
     if (source === 'type') {
       const r = heightRange();
       state.heightStored = clamp(state.heightStored, r.min, r.max);
@@ -542,6 +605,7 @@ const angleCtrl = LT.SliderControl({
   onInput: (deg, source) => {
     state.angleStored = deg;
     if (source === 'drag') dragWinner = 'angle';
+    // Type commit: clamp to current valid range. Drag yields — see height handler.
     if (source === 'type') {
       const r = angleRange();
       state.angleStored = clamp(state.angleStored, r.min, r.max);
@@ -549,6 +613,21 @@ const angleCtrl = LT.SliderControl({
     }
     recompute();
   },
+});
+
+// Click-to-promote — pointerdown on a slider thumb (no value change required)
+// promotes that key to dragWinner and recomputes, so Min/Max-applied labels
+// and clamped-thumb darkening reflect the click immediately rather than
+// waiting for the user to move something.
+heightCtrl.slider.addEventListener('pointerdown', () => {
+  if (dragWinner === 'height') return;
+  dragWinner = 'height';
+  recompute();
+});
+angleCtrl.slider.addEventListener('pointerdown', () => {
+  if (dragWinner === 'angle') return;
+  dragWinner = 'angle';
+  recompute();
 });
 
 // ── Unit toggle ───────────────────────────────────────────────────────────────

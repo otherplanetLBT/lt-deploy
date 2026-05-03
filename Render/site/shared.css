@@ -429,11 +429,15 @@ a { color: inherit; }
 }
 .slider-marker.visible { display: block; }
 
+/* Horizontal arms — extended 1px INTO the vertical bar with the inner-facing
+   corners flattened (border-radius only on the outer end). The 1px overlap
+   plus the flat inner edge eliminates the sub-pixel corner gap that was
+   visible where rounded vertical met rounded horizontal — the vertical bar
+   visually "owns" the join, the arms read as continuous extensions. */
 .slider-marker::before,
 .slider-marker::after {
   content: ''; position: absolute;
   width: 7px; height: 2px;
-  border-radius: 1px;
   background: linear-gradient(
     to bottom,
     var(--anodize-bright) 0%,
@@ -444,10 +448,10 @@ a { color: inherit; }
     inset 1px 0 0 rgba(255, 255, 255, 0.22),
     0 0 3px var(--anodize-glow);
 }
-.slider-marker.is-min::before { top: 0;    left: 100%; }
-.slider-marker.is-min::after  { bottom: 0; left: 100%; }
-.slider-marker.is-max::before { top: 0;    right: 100%; }
-.slider-marker.is-max::after  { bottom: 0; right: 100%; }
+.slider-marker.is-min::before { top: 0;    left:  calc(100% - 1px); border-radius: 0 1px 1px 0; }
+.slider-marker.is-min::after  { bottom: 0; left:  calc(100% - 1px); border-radius: 0 1px 1px 0; }
+.slider-marker.is-max::before { top: 0;    right: calc(100% - 1px); border-radius: 1px 0 0 1px; }
+.slider-marker.is-max::after  { bottom: 0; right: calc(100% - 1px); border-radius: 1px 0 0 1px; }
 
 /* ── Starfield canvas helper ──────────────────────────────────────────────── */
 /* IMPORTANT: <canvas> is a replaced element with intrinsic dimensions (default

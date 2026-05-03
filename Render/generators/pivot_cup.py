@@ -37,6 +37,15 @@ N_CONE         = 64     # profile points along outer cone / dome arc
 N_HEMI         = 64     # profile points along inner hemisphere arc
 N_REVOLVE      = 128    # angular steps for revolution
 
+# FP slack (mm) for boundary comparisons. Values arrive from the JS soft-clamp
+# rounded to 3 decimals (.toFixed(3)) — at exact constraint boundaries this
+# round-trip can land 1e-15 below the bound, e.g. (16.9 - 13.3)/2 evaluates to
+# 1.7999999999999998 instead of 1.8. Without slack the validator rejects values
+# that the UI presents as "right at the limit." 1e-3 mm is one micron — well
+# below any meaningful manufacturing tolerance, so the slack is invisible to
+# physical outcomes but absorbs all realistic FP noise.
+EPS_FP_MM      = 1e-3
+
 CUP_MODES = {'pointed', 'flat', 'hemi'}
 ALL_MODES = {'pointed', 'flat', 'hemi', 'tube'}
 
@@ -74,7 +83,7 @@ CONSTRAINTS = [
     },
     {
         'modes':     ALL_MODES,
-        'condition': lambda m,pd,pl,sd,sdep: pd < sd and (sd-pd)/2 < MIN_WALL_MM,
+        'condition': lambda m,pd,pl,sd,sdep: pd < sd and (sd-pd)/2 < MIN_WALL_MM - EPS_FP_MM,
         'user_msg':  f"Wall is too thin — Socket Diameter minus Pivot Diameter must be at least {MIN_WALL_MM*2:.1f} mm ({MIN_WALL_MM:.1f} mm per side).",
     },
 
@@ -113,7 +122,7 @@ CONSTRAINTS = [
     # has no top so ceiling thickness doesn't apply.
     {
         'modes':     {'pointed', 'flat'},
-        'condition': lambda m,pd,pl,sd,sdep: (sdep - pl) < MIN_CEILING_MM,
+        'condition': lambda m,pd,pl,sd,sdep: (sdep - pl) < MIN_CEILING_MM - EPS_FP_MM,
         'user_msg':  (
             f"Ceiling is too thin — Socket Depth minus Pivot Depth must be at least "
             f"{MIN_CEILING_MM} mm. Reduce Pivot Depth or increase Socket Depth."

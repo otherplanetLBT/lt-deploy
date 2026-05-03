@@ -199,7 +199,10 @@ def validate(center_h, angle_deg, master_height):
     if angle_deg < 0 or angle_deg > MAX_ANGLE_DEG:
         raise ValueError(f"Wedge angle must be between 0 and {MAX_ANGLE_DEG}°.")
     thin = thin_end_height(center_h, angle_deg)
-    if thin < MIN_WALL_MM:
+    # 1e-3 mm (one micron) slack absorbs FP noise from the JS round-trip
+    # (.toFixed(3)) at exact constraint boundaries — the UI can present a value
+    # as "right at the limit" while the literal float lands ~1e-15 below.
+    if thin < MIN_WALL_MM - 1e-3:
         raise ValueError(
             f"Thin end would be {thin:.2f} mm — below {MIN_WALL_MM} mm minimum. "
             f"Minimum center height for {angle_deg:.1f}° is "

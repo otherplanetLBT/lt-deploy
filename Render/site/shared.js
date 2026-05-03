@@ -96,6 +96,41 @@
     requestAnimationFrame(frame);
   }
 
+  // Last-interacted slider gets an `.active` class — pages style it to stay
+  // slightly larger than its peers so the eye can track which control was
+  // most recently engaged. Promotion fires on any of:
+  //   - drag (input event on the range)
+  //   - click without movement (pointerdown on the range)
+  //   - focus on the paired text input (focusin on .value-input)
+  // Pure hover does NOT promote — hover has its own scale transition and we
+  // don't want passing the mouse over a slider to repaint others.
+  function promoteRange(range) {
+    if (!range) return;
+    document.querySelectorAll('input[type=range].active').forEach(s => {
+      if (s !== range) s.classList.remove('active');
+    });
+    range.classList.add('active');
+  }
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t && t.matches && t.matches('input[type=range]')) promoteRange(t);
+  });
+  // pointerdown covers mouse + touch + pen. Click-to-promote is the user-
+  // visible "I picked this slider" cue, even before they actually move it.
+  document.addEventListener('pointerdown', (e) => {
+    const t = e.target;
+    if (t && t.matches && t.matches('input[type=range]')) promoteRange(t);
+  });
+  document.addEventListener('focusin', (e) => {
+    const t = e.target;
+    // Promote the sibling range when its paired text input gets focus —
+    // the text field lives inside the same .control-row as the slider.
+    if (t && t.matches && t.matches('.value-input')) {
+      const row = t.closest('.control-row');
+      if (row) promoteRange(row.querySelector('input[type=range]'));
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', () => {
     // Full-viewport starfield (landing page background) — original holding-page
     // intensity: density 1/6000, full-alpha twinkle, default radius range.
@@ -216,18 +251,42 @@
         valueInput.value = formatMM(lastView.effMM);
       }
 
+      function pctOf(mm) {
+        return (mm - sliderMinMM) / (sliderMaxMM - sliderMinMM) * 100;
+      }
+
       function placeMarker(el, mm) {
         if (!el) return;
         if (mm == null) { el.classList.remove('visible'); return; }
         if (mm <= sliderMinMM || mm >= sliderMaxMM) {
           el.classList.remove('visible'); return;
         }
-        const pct = (mm - sliderMinMM) / (sliderMaxMM - sliderMinMM) * 100;
-        el.style.left = pct + '%';
+        el.style.left = pctOf(mm) + '%';
         el.classList.add('visible');
       }
       placeMarker(minMarker, lastView.minBoundMM);
       placeMarker(maxMarker, lastView.maxBoundMM);
+
+      // Track clamp percentages — pages use these CSS vars to shade portions of
+      // the track that sit outside the active min/max bounds. A bound that's
+      // off-slider contributes 0%/100% (i.e. that side is unrestricted within
+      // the visible track).
+      const minPct = (lastView.minBoundMM != null
+                      && lastView.minBoundMM > sliderMinMM
+                      && lastView.minBoundMM < sliderMaxMM)
+                      ? pctOf(lastView.minBoundMM) : 0;
+      const maxPct = (lastView.maxBoundMM != null
+                      && lastView.maxBoundMM > sliderMinMM
+                      && lastView.maxBoundMM < sliderMaxMM)
+                      ? pctOf(lastView.maxBoundMM) : 100;
+      slider.style.setProperty('--clamp-min-pct', minPct + '%');
+      slider.style.setProperty('--clamp-max-pct', maxPct + '%');
+
+      // Clamped state — thumb sits at a constraint boundary (the user's stored
+      // intent is being pinned by an active soft-clamp). 'extended' (typed past
+      // slider range) is a different signal and does NOT toggle this class.
+      const isClamped = lastView.clampReason === 'min' || lastView.clampReason === 'max';
+      slider.classList.toggle('clamped', isClamped);
 
       if (clampLabel) {
         if (lastView.clampReason && clampLabelText[lastView.clampReason]) {
