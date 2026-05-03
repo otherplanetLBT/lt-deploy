@@ -1,3 +1,3 @@
 git add .
-git commit -m "Slider system cleanup: smaller thumbs (14px) with active state (17px + green-glow center), track dimmed outside clamps via CSS vars, click promotes to active + drag-winner, drag-wins-yield restored with bisection safety net for bracket inversion, bracket-marker gap closed, redundant captions stripped, 1e-3 mm FP slack on Python validators"
+git commit -m "Page-naming convention canonicalized (Landing / Tools / Pivot Cup Generator / Riser Pad Generator); terminology unified across all docs and code comments; Kit account fully retired; new /api/health endpoint on Flask + warmup-ping fetch on Landing page so Render's free-tier cold start is mostly absorbed by reading time"
 git push origin main

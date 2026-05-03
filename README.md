@@ -13,10 +13,9 @@ deploy/
 │   ├── requirements.txt
 │   ├── Run Flask.bat          ← Windows local-dev launcher
 │   ├── generators/            ← STL geometry modules
-│   ├── assets/                ← master STL files for the riser pad slicer
-│   └── site/                  ← landing + per-tool HTML/CSS/JS
-└── Netlify/                   ← deploys to longboardtechnology.com (static marketing site)
-    └── (in progress)
+│   ├── assets/                ← master STL files for the Riser Pad Generator
+│   └── site/                  ← Tools page + both generator pages (HTML/CSS/JS)
+└── Netlify/                   ← deploys to longboardtechnology.com (the Landing page)
 ```
 
 ## What ships where

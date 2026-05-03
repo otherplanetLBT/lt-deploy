@@ -360,6 +360,19 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 </style>
+
+<!-- Warmup ping for the Tools backend.
+     Render's free tier spins down after 15 min idle. Most visitors arrive on
+     this page before navigating to a tool, so firing a fire-and-forget request
+     to /api/health here gives Render a head start on its ~30s cold wake-up
+     while the user is reading. By the time they click into Pivot Cup or Riser
+     Pad, the backend is mostly (often fully) awake. `mode: 'no-cors'` because
+     we don't read the response — only care that the request lands. The catch
+     swallows offline errors / blocked connections so it can't break the page. -->
+<script>
+  fetch('https://lt-tools.onrender.com/api/health', { mode: 'no-cors' })
+    .catch(() => {});
+</script>
 </head>
 <body>
 

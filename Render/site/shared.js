@@ -23,11 +23,11 @@
   // ============================================================================
   // Static cosmos: stars are placed once, then breathe via a sinusoidal alpha
   // envelope. Drawn as circles with varying radius — feels like a night sky,
-  // not snow. Match the original holding page's character. `speed` is kept as
+  // not snow. Match the original Landing page's character. `speed` is kept as
   // a knob in case a future caller wants drifting stars; default 0 = static.
   function initStarfield(canvas, opts) {
     opts = opts || {};
-    // Defaults match the original holding page math (Initial Documents/index.html):
+    // Defaults match the original Landing page math (Initial Documents/index.html):
     // density 1/6000 ≈ 0.000167, full-alpha twinkle, radius 0.2..1.6 px.
     // No devicePixelRatio scaling — keeps the look identical on Retina vs LowDPI
     // and avoids the soft-edge artefacts that came from drawing into a 2× bitmap.
@@ -132,7 +132,7 @@
   });
 
   document.addEventListener('DOMContentLoaded', () => {
-    // Full-viewport starfield (landing page background) — original holding-page
+    // Full-viewport starfield (landing page background) — original Landing-page
     // intensity: density 1/6000, full-alpha twinkle, default radius range.
     document.querySelectorAll('canvas.starfield').forEach(c => {
       initStarfield(c);   // all defaults

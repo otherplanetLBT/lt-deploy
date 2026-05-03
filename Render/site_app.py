@@ -1,20 +1,23 @@
 """
 site_app.py — Longboard Technology unified site server
-Serves the landing page and both generator tools.
+Serves the Tools page and both generator pages.
 
 Usage:
     python site_app.py
     Open http://localhost:5000
 
 Routes:
-    /                              landing / tools hub
-    /pivot-cup/                    pivot cup generator UI
-    /riser-pad/                    riser pad generator UI
+    /                              Tools page (index/hub for the generators)
+    /pivot-cup/                    Pivot Cup Generator UI
+    /riser-pad/                    Riser Pad Generator UI
+    /api/health                    GET  → 200 'ok' (warmup/cold-start ping)
     /api/pivot-cup/generate        POST → STL bytes
     /api/riser-pad/slice           POST → STL bytes
     /api/riser-pad/validate        POST → validation JSON
 
 The /wiki/ route is intentionally absent until publishable wiki content exists.
+The Landing page (longboardtechnology.com) is served separately by Netlify
+from `deploy/Netlify/`; this app handles the `tools.` subdomain only.
 """
 
 import io
@@ -89,6 +92,21 @@ def pivot_cup_page():
 @app.route('/riser-pad/index.html')
 def riser_pad_page():
     return send_from_directory(os.path.join(SITE_DIR, 'riser-pad'), 'index.html')
+
+
+# ── Warmup / health ───────────────────────────────────────────────────────────
+# Cold-start absorber. Render's free tier spins down after 15 min idle; the
+# next request triggers a ~30s wake-up. The Landing page (Netlify, instant)
+# fires a fire-and-forget fetch to this endpoint on page load so Render starts
+# warming up while the visitor is reading. By the time they navigate to a tool
+# page the cold-start delay is mostly absorbed by their reading time. Returns
+# a tiny string so the response is cheap; no CORS headers needed because the
+# Landing-page fetch uses `mode: 'no-cors'` (we don't care about the body, we
+# only care that the request lands).
+
+@app.route('/api/health')
+def health():
+    return 'ok', 200
 
 
 # ── Pivot cup API ─────────────────────────────────────────────────────────────
