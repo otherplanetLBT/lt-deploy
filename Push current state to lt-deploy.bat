@@ -1,3 +1,3 @@
 git add .
-git commit -m "Copy refresh on Landing + Tools pages: Landing tagline 'Designed with intent.' -> 'Out of this world.' (ties to the starfield), Coming Soon badge dropped, sub tightened to one cohesive thought. Tools sub leads with the 'without CAD' hook; Pivot Cup card adds TPU upgrade tagline + community-library mention; Riser Pad card stripped of stale bolt-pattern copy and pruned bullets."
+git commit -m "Wedge angle warnings on Riser Pad: value input flips warn (>10 deg) then err (>15 deg) so users get an ambient cue while dialing in. Info-icon tooltip carries the threshold explanation. Plus deepened --err red (#e55353 -> #f04a3c) for stronger contrast against the navy palette — warm-shifted, ~85% saturation, sits in the same hue lane as the octopus-orange mesh; cascades to all existing err usages (validation messages, the Thin end stat when invalid, etc.)"
 git push origin main

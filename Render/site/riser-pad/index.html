@@ -294,6 +294,12 @@
       border-bottom: 1px solid transparent;
       transition: border-color 0.15s, background 0.15s;
     }
+    /* Threshold colour states for the value input — JS toggles these classes
+       on #val-angle as the wedge angle crosses 10° (warn) and 15° (err). The
+       same pattern can extend to other values later if needed. Focus state
+       still wins over warn/err so editing the value remains visually clear. */
+    .value-input.warn { color: var(--warn); }
+    .value-input.err  { color: var(--err); }
     .value-input:focus {
       background: var(--surface2);
       border-bottom-color: var(--accent);
@@ -371,7 +377,7 @@
             <div class="control-header">
               <div class="control-name-wrap">
                 <span class="control-name">Wedge Angle</span>
-                <button class="info-btn" type="button" aria-label="More info" data-tooltip="How much you will add or subtract from your Baseplate Angle.">i</button>
+                <button class="info-btn" type="button" aria-label="More info" data-tooltip="How much you'll add or subtract from your baseplate angle. Above 10° is aggressive; above 15° is not recommended.">i</button>
                 <span class="clamp-label" id="clamp-angle">Max applied</span>
               </div>
               <input class="value-input" id="val-angle" type="text" value="0.0°" aria-label="Wedge angle">
@@ -522,6 +528,13 @@ function recompute() {
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
+// Wedge angle thresholds: under 10° is unremarkable; 10-15° is aggressive
+// (warn); above 15° is not recommended for typical setups (err). The angle
+// value input flips colour as it crosses each threshold so users get an
+// ambient cue while dialing — the info-icon tooltip carries the explanation.
+const ANGLE_WARN_DEG = 10;
+const ANGLE_ERR_DEG  = 15;
+
 function updateStats() {
   const h     = state.heightEff;
   const a     = state.angleEff;
@@ -536,6 +549,11 @@ function updateStats() {
 
   const thinClass = thin < MIN_WALL ? 'err' : 'ok';
   document.getElementById('stat-thin').className = 'stat-val ' + thinClass;
+
+  // Angle warn/err classes on the value input (only — not the slider thumb).
+  const angleVal = document.getElementById('val-angle');
+  angleVal.classList.toggle('err',  a >  ANGLE_ERR_DEG);
+  angleVal.classList.toggle('warn', a >  ANGLE_WARN_DEG && a <= ANGLE_ERR_DEG);
 
   document.getElementById('btn-preview').disabled = false;
 }

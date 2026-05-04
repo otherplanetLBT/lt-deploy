@@ -39,7 +39,7 @@
 
   --ok:          #3ecf7a;
   --warn:        #f5a623;
-  --err:         #e55353;
+  --err:         #f04a3c;     /* warm-shifted red, ~85% saturation — punchier on the navy/surface backdrop than the previous #e55353. Sits in the same hue lane as the octopus-orange mesh, so the warm-warning palette feels coherent. */
 
   /* Anodized purple — for slider clamp markers. Three stops give a metallic
      "bar caught by a top-light" gradient. Used in shared.css below. */
