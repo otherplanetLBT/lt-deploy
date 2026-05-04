@@ -1,3 +1,3 @@
 git add .
-git commit -m "Pivot Cup library MVP wired up: Tally form ID + Sheet URL filled in. Tally modal scaled tighter (12px outer padding, 8px header padding, 480px iframe min-height) so the Library Submission form's longer field list fits without inner scroll on most desktop viewports."
+git commit -m "Copy refresh on Landing + Tools pages: Landing tagline 'Designed with intent.' -> 'Out of this world.' (ties to the starfield), Coming Soon badge dropped, sub tightened to one cohesive thought. Tools sub leads with the 'without CAD' hook; Pivot Cup card adds TPU upgrade tagline + community-library mention; Riser Pad card stripped of stale bolt-pattern copy and pruned bullets."
 git push origin main
