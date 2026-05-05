@@ -7,6 +7,9 @@
      LT.Viewport({...})                            — Three.js scene + STL loader
      LT.SliderControl({...})                       — slider + text input + markers
      LT.UnitToggle({...})                          — mm/in switching
+     LT.sessionId                                  — per-tab UUID for usage logs
+     LT.logEvent({type, tool, ...})                — fire-and-forget POST to
+                                                     /api/log-event
 
    The page owns the state and constraint resolution. SliderControl just
    renders what the page tells it to, and reports user input via callbacks.
@@ -841,6 +844,48 @@
   }
 
   // ============================================================================
+  // Usage logging
+  // ============================================================================
+  // Per-tab session ID, generated lazily on first use and persisted in
+  // sessionStorage so all events from the same browser tab share an ID. The
+  // backing Sheet uses this column to distinguish "1 person previewed 30
+  // times" from "30 people previewed once each." sessionStorage scope means
+  // the ID resets when the tab closes — no cross-session tracking, no
+  // fingerprinting. If sessionStorage is blocked (Safari private mode, etc.)
+  // we fall back to an in-memory ID prefixed `nostore_` so the column stays
+  // populated and the failure is visible in the data.
+  const sessionId = (function () {
+    const KEY = 'lt_session_id';
+    try {
+      let id = sessionStorage.getItem(KEY);
+      if (!id) {
+        id = (crypto && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+        sessionStorage.setItem(KEY, id);
+      }
+      return id;
+    } catch (_) {
+      return 'nostore_' + Math.random().toString(36).slice(2, 12);
+    }
+  })();
+
+  // Fire-and-forget event logger. Sends to /api/log-event on the same origin;
+  // the Flask side enriches with Referer + User-Agent headers and forwards to
+  // the Apps Script webhook. All errors are swallowed — usage logging must
+  // never break a download or a preview.
+  function logEvent(payload) {
+    try {
+      fetch('/api/log-event', {
+        method:    'POST',
+        headers:   { 'Content-Type': 'application/json' },
+        body:      JSON.stringify(Object.assign({ session_id: sessionId }, payload || {})),
+        keepalive: true,
+      }).catch(() => {});
+    } catch (_) { /* never throw from a logger */ }
+  }
+
+  // ============================================================================
   // Expose
   // ============================================================================
   window.LT = window.LT || {};
@@ -854,6 +899,8 @@
     openFeedback,
     feedbackConfig,
     initTooltips,
+    sessionId,
+    logEvent,
   });
 
   // Auto-init on DOMContentLoaded so pages don't have to call it.

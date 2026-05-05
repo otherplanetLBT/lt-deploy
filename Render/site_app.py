@@ -11,6 +11,7 @@ Routes:
     /pivot-cup/                    Pivot Cup Generator UI
     /riser-pad/                    Riser Pad Generator UI
     /api/health                    GET  → 200 'ok' (warmup/cold-start ping)
+    /api/log-event                 POST → 204 (forwards usage event to Sheet)
     /api/pivot-cup/generate        POST → STL bytes
     /api/riser-pad/slice           POST → STL bytes
     /api/riser-pad/validate        POST → validation JSON
@@ -25,6 +26,7 @@ import os
 import math
 import sys
 
+import requests
 from flask import Flask, request, jsonify, send_file, send_from_directory
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -49,6 +51,15 @@ RISER_STL_DIR = os.path.join(ASSETS, 'riser-pad-stls')
 # `<Stylename>.stl` file into assets/riser-pad-stls/. No other code changes.
 KNOWN_STYLES  = ['solid', 'skeleton']
 DEFAULT_STYLE = 'solid'
+
+
+# ── Usage logging webhook ─────────────────────────────────────────────────────
+# Apps Script web-app URL that receives preview/download events and appends
+# them to a Google Sheet. Set in the Render dashboard env vars (NOT in git) —
+# see download_log_setup.md at the project root for the one-time setup. If
+# unset, /api/log-event is a no-op (returns 204 without forwarding). Local dev
+# without the env var works the same way: events are silently dropped.
+LOG_WEBHOOK_URL = os.environ.get('LOG_WEBHOOK_URL', '').strip()
 
 
 def get_master_path(style):
@@ -107,6 +118,34 @@ def riser_pad_page():
 @app.route('/api/health')
 def health():
     return 'ok', 200
+
+
+# ── Usage logging ─────────────────────────────────────────────────────────────
+# Receives fire-and-forget JSON events from the page (LT.logEvent in
+# shared.js) and forwards to the Apps Script webhook. We enrich with Referer
+# + User-Agent server-side so the page payload stays small. The endpoint
+# returns 204 unconditionally — even if the webhook is unset or the upstream
+# call fails — because the page doesn't read the response, and we never want
+# logging plumbing to surface as a user-visible error.
+#
+# Payload shapes (the page guarantees these):
+#   preview:  {type: 'preview',  tool, session_id}
+#   download: {type: 'download', tool, session_id, unit, params: {...}}
+
+@app.route('/api/log-event', methods=['POST'])
+def api_log_event():
+    if not LOG_WEBHOOK_URL:
+        return '', 204  # logger not wired — silently drop
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        payload['referrer']   = request.headers.get('Referer', '')
+        payload['user_agent'] = request.headers.get('User-Agent', '')
+        requests.post(LOG_WEBHOOK_URL, json=payload, timeout=2)
+    except Exception:
+        # Never let a webhook hiccup propagate. The download/preview the user
+        # actually cares about already succeeded by the time we get here.
+        pass
+    return '', 204
 
 
 # ── Pivot cup API ─────────────────────────────────────────────────────────────
