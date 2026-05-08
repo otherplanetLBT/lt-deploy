@@ -67,6 +67,20 @@
       display: flex; align-items: center; gap: 8px;
     }
     .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    /* Variant: section label with a trailing inline link (e.g. "Browse library →"
+       on the Parameters section). Suppresses the auto-rule and uses an explicit
+       <span class="section-rule"> placed before the link instead, so the link
+       sits at the right edge with the rule filling the space between it and the
+       label. Link is quietly styled — same uppercase mono treatment as the label
+       so it reads as part of the section header, not as a competing CTA. */
+    .section-label.section-label-with-link::after { display: none; }
+    .section-label .section-rule { flex: 1; height: 1px; background: var(--border); }
+    .section-label .section-link {
+      font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--text-dim); text-decoration: none; white-space: nowrap;
+      transition: color 0.15s;
+    }
+    .section-label .section-link:hover { color: var(--accent); }
 
     /* Mode selector */
     .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -91,7 +105,6 @@
     }
     .control-name-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; flex-shrink: 1; }
     .control-name { font-size: 0.76rem; color: var(--text-mid); white-space: nowrap; }
-    .control-sub { font-size: 0.63rem; color: var(--text-dim); }
     .control-row.hidden { display: none; }
 
     .clamp-label {
@@ -100,27 +113,90 @@
     }
     .clamp-label.visible { display: inline; }
 
-    /* Slider — markers come from shared.css (.slider-marker.is-min / .is-max) */
+    /* Slider — markers come from shared.css (.slider-marker.is-min / .is-max).
+       Track is a CSS-var-driven gradient: the portion of the track inside the
+       active clamp window (--clamp-min-pct → --clamp-max-pct, set per-slider
+       by shared.js) uses --border; outside the clamps it dims so you can SEE
+       the dead zones rather than hitting them by surprise. Both vars default
+       to 0%/100% if shared.js hasn't pushed values yet — so the first paint
+       (before recompute()) shows the whole track at the lit colour. */
     .slider-wrap { position: relative; }
     .slider-wrap input[type=range] { display: block; width: 100%; }
 
     input[type=range] {
       -webkit-appearance: none; width: 100%; height: 4px; border-radius: 4px;
-      background: var(--border); outline: none; cursor: pointer;
+      outline: none; cursor: pointer;
+      --clamp-min-pct: 0%;
+      --clamp-max-pct: 100%;
+      background:
+        linear-gradient(
+          to right,
+          rgba(0, 0, 0, 0.20) 0%,
+          rgba(0, 0, 0, 0.20) var(--clamp-min-pct),
+          var(--border)       var(--clamp-min-pct),
+          var(--border)       var(--clamp-max-pct),
+          rgba(0, 0, 0, 0.20) var(--clamp-max-pct),
+          rgba(0, 0, 0, 0.20) 100%
+        );
     }
+    /* Thumb — small white dot. The .active state (toggled by shared.js on
+       the most-recently-interacted slider) bumps it up a notch and overlays
+       a soft green glow that fades into the white — a center-point hint, not
+       a hard dot. Hover scale stacks on top of either size. */
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+      -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
       background: var(--white); border: 2px solid var(--bg);
       box-shadow: 0 0 6px rgba(255, 255, 255, 0.25); cursor: pointer;
-      transition: transform 0.1s, box-shadow 0.1s;
+      transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
     }
     input[type=range]::-moz-range-thumb {
-      width: 18px; height: 18px; border-radius: 50%;
+      width: 14px; height: 14px; border-radius: 50%;
       background: var(--white); border: 2px solid var(--bg);
       box-shadow: 0 0 6px rgba(255, 255, 255, 0.25); cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
+    }
+    input[type=range].active::-webkit-slider-thumb {
+      width: 17px; height: 17px;
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        var(--white);
+    }
+    input[type=range].active::-moz-range-thumb {
+      width: 17px; height: 17px;
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        var(--white);
     }
     input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.15); box-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
     input[type=range]:hover::-moz-range-thumb     { transform: scale(1.15); box-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
+    /* Clamped — stored value is being pinned by an active soft-clamp. Dim the
+       white so the thumb reads "you can't push past this." On the active
+       slider the green glow stays visible (it's a different signal —
+       recency, not constraint), only the surrounding white darkens. */
+    input[type=range].clamped::-webkit-slider-thumb {
+      background: rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].clamped::-moz-range-thumb {
+      background: rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].active.clamped::-webkit-slider-thumb {
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].active.clamped::-moz-range-thumb {
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        rgba(255, 255, 255, 0.45);
+    }
 
     /* Editable value input */
     .value-input {
@@ -220,6 +296,14 @@
       pointer-events: none; display: none; border: 1px solid var(--border);
     }
 
+    /* Page load-in cascade — see ltFadeUp in shared.css. Four-step stagger
+       buys ~1s of motion while the first preview is generating, hiding the
+       moment of dead canvas behind a deliberate entrance. */
+    .site-nav   { animation: ltFadeUp 0.8s 0s    both; }
+    .gen-header { animation: ltFadeUp 0.8s 0.15s both; }
+    .sidebar    { animation: ltFadeUp 0.8s 0.3s  both; }
+    .viewport   { animation: ltFadeUp 0.8s 0.45s both; }
+
     @media (max-width: 640px) {
       .body { flex-direction: column-reverse; }
       .sidebar { width: 100%; border-right: none; border-top: 1px solid var(--border); max-height: 58vh; }
@@ -236,7 +320,7 @@
 <div class="nav-accent-bar"></div>
 <nav class="site-nav">
   <canvas class="starfield-nav" aria-hidden="true"></canvas>
-  <a class="nav-logo" href="/">Longboard<span>Technology</span></a>
+  <a class="nav-logo" href="https://longboardtechnology.com">Longboard<span>Technology</span></a>
   <ul class="nav-links">
     <li><a href="/pivot-cup/" class="active">Pivot Cup</a></li>
     <li><a href="/riser-pad/">Riser Pad</a></li>
@@ -283,8 +367,12 @@
 
         <!-- Parameters -->
         <div>
-          <div class="section-label">Parameters</div>
-          <div style="display:flex;flex-direction:column;gap:13px;">
+          <div class="section-label section-label-with-link">
+            <span>Parameters</span>
+            <span class="section-rule"></span>
+            <a id="link-browse-library" class="section-link" href="#" target="_blank" rel="noopener">Browse library →</a>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:20px;">
 
             <div class="control-row">
               <div class="control-header">
@@ -300,7 +388,6 @@
                 <div class="slider-marker is-min" id="min-marker-pivot-d"></div>
                 <div class="slider-marker is-max" id="max-marker-pivot-d"></div>
               </div>
-              <span class="control-sub">Diameter of the pivot pin</span>
             </div>
 
             <div class="control-row" id="row-pivot-l">
@@ -317,7 +404,6 @@
                 <div class="slider-marker is-min" id="min-marker-pivot-l"></div>
                 <div class="slider-marker is-max" id="max-marker-pivot-l"></div>
               </div>
-              <span class="control-sub">Total depth of pivot cavity</span>
             </div>
 
             <div class="control-row">
@@ -334,7 +420,6 @@
                 <div class="slider-marker is-min" id="min-marker-socket-d"></div>
                 <div class="slider-marker is-max" id="max-marker-socket-d"></div>
               </div>
-              <span class="control-sub">Outer diameter of cup body</span>
             </div>
 
             <div class="control-row">
@@ -351,7 +436,6 @@
                 <div class="slider-marker is-min" id="min-marker-socket-dep"></div>
                 <div class="slider-marker is-max" id="max-marker-socket-dep"></div>
               </div>
-              <span class="control-sub" id="sub-socket-dep">Total height of cup body</span>
             </div>
 
           </div>
@@ -363,14 +447,6 @@
         <div>
           <div class="section-label">Geometry</div>
           <div class="stats-card">
-            <div class="stat-row" id="stat-row-shoulder">
-              <span class="stat-label" id="stat-shoulder-label">Cone shoulder</span>
-              <span class="stat-val" id="stat-shoulder">— mm</span>
-            </div>
-            <div class="stat-row" id="stat-row-hemi-ctr">
-              <span class="stat-label">Hemi centre</span>
-              <span class="stat-val" id="stat-hemi-ctr">— mm</span>
-            </div>
             <div class="stat-row">
               <span class="stat-label">Wall thickness</span>
               <span class="stat-val" id="stat-wall">— mm</span>
@@ -378,14 +454,6 @@
             <div class="stat-row" id="stat-row-ceiling">
               <span class="stat-label">Ceiling thickness</span>
               <span class="stat-val" id="stat-ceiling">— mm</span>
-            </div>
-            <div class="stat-row" id="stat-row-top-angle">
-              <span class="stat-label">Cone angle</span>
-              <span class="stat-val ok">30.0°</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Overhang limit</span>
-              <span class="stat-val" id="stat-overhang">40.0°</span>
             </div>
           </div>
         </div>
@@ -411,6 +479,13 @@
             Download STL
           </button>
         </div>
+
+        <!-- "Engage with the project" zone — divider separates it from the
+             tool-action zone above. Submit-to-Library is the higher-volume
+             positive contribution (sharing a working cup); Mission Report is
+             the quieter, problem-oriented contribution. -->
+        <div class="divider"></div>
+        <button class="btn-library" id="btn-library-submit" type="button">Submit to library</button>
         <button class="btn-feedback" id="btn-feedback" type="button">Mission report</button>
 
       </div>
@@ -421,6 +496,7 @@
       <div class="loading-overlay visible" id="loading-overlay">
         <div class="loading-ring"></div>
         <div class="loading-msg" id="loading-msg">Building mesh…</div>
+        <div class="loading-sub" id="loading-sub"></div>
       </div>
       <div class="viewport-status" id="viewport-status"></div>
       <div class="viewport-hint">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
@@ -525,6 +601,20 @@ const rangeOf = {
   sdep: sdepRange,
 };
 
+// Whether any slider OTHER than `skipKey` would have an inverted range at the
+// current `state.*Stored` values. Used by the drag handler to detect the
+// "your drag would make another slider's brackets cross" condition. The
+// 1e-6 mm slack tolerates exact-equality boundaries (range collapsed to a
+// point but not yet inverted) — those are still solvable.
+function othersInverted(skipKey) {
+  for (const k of Object.keys(rangeOf)) {
+    if (k === skipKey) continue;
+    const r = rangeOf[k]();
+    if (r.min > r.max + 1e-6) return true;
+  }
+  return false;
+}
+
 // ── Recompute (single-pass: drag-wins skip-clamp, others soft-clamp) ──────────
 function recompute() {
   const ranges = {
@@ -557,8 +647,6 @@ function recompute() {
 
   // Mode-specific UI bits
   document.getElementById('row-pivot-l').classList.toggle('hidden', state.mode === 'tube');
-  document.getElementById('sub-socket-dep').textContent =
-    state.mode === 'flat' ? 'Total height incl. truncated cone' : 'Total height of cup body';
 
   updateStats();
   updateValidation();
@@ -604,30 +692,12 @@ function updateStats() {
     el.className   = 'stat-val' + (cls ? ' ' + cls : '');
   }
 
-  if (mode === 'pointed' || mode === 'flat') {
-    setVal('stat-shoulder', fmt(sdep - cone_h, 1, 3));
-  } else if (mode === 'hemi') {
-    setVal('stat-shoulder', fmt(sdep - r_outer, 1, 3));
-  } else {
-    setVal('stat-shoulder', '—');
-  }
-
-  setVal('stat-hemi-ctr', isCup ? fmt(hemi_ctr, 1, 3) : '—');
   setVal('stat-wall',     fmt(wall, 1, 3),
                           wall < MIN_WALL ? 'err' : 'ok');
   setVal('stat-ceiling',  isCup ? fmt(ceiling, 1, 3) : '—',
                           isCup ? (ceiling < MIN_CEILING ? 'err' : ceiling < 3 ? 'warn' : 'ok') : '');
-  setVal('stat-overhang', isCup ? OVERHANG_DEG.toFixed(1) + '°' : '—', 'ok');
 
-  document.getElementById('stat-row-shoulder').classList.toggle('hidden', mode === 'tube');
-  document.getElementById('stat-row-hemi-ctr').classList.toggle('hidden', !isCup);
   document.getElementById('stat-row-ceiling').classList.toggle('hidden', !isCup);
-  document.getElementById('stat-row-top-angle').classList.toggle('hidden', !isCone);
-
-  const lbl = document.getElementById('stat-shoulder-label');
-  if (lbl) lbl.textContent = mode === 'hemi' ? 'Dome base'
-                          : mode === 'tube' ? '—'
-                          : 'Cone shoulder';
 }
 
 // ── Hard validation (only impossible cases) ───────────────────────────────────
@@ -679,15 +749,37 @@ function makeCtrl(key, label) {
     unit:        'mm',
     clampLabelText: { min: 'Min applied', max: 'Max applied', extended: 'Extended' },
     onInput: (mm, source) => {
+      const oldStored = state[key + 'Stored'];
       state[key + 'Stored'] = mm;
       if (source === 'drag') dragWinner = key;
+      // Type still hard-clamps to the slider's own valid range (others stay).
       if (source === 'type') {
-        // Per Q3: typed value clamps to current valid range (others stay).
         const r = rangeOf[key]();
         if (r.min <= r.max) {
           state[key + 'Stored'] = clamp(state[key + 'Stored'], r.min, r.max);
           controls[key].setStoredMM(state[key + 'Stored'], false);
         }
+      }
+      // Drag wins — drag-winner skips its own clamp so other sliders yield to
+      // accommodate it. BUT we hard-stop drag when the move would cause some
+      // OTHER slider's range to invert (min > max), i.e. one bracket would
+      // cross another. That's the narrow case the user reported: dragging
+      // pivot depth UP eventually pushes pl_min past pl_max (or pd's range
+      // inverts via the wall constraint), and the previously-yielding slider
+      // can no longer satisfy the constraint geometry. We bisect between the
+      // last-known-valid stored value and the requested mm to find the
+      // furthest valid step. Generic across modes — no per-mode formula.
+      if (source === 'drag' && othersInverted(key)) {
+        let lo = oldStored, hi = mm;     // lo assumed valid, hi known invalid
+        for (let i = 0; i < 25; i++) {
+          const mid = (lo + hi) / 2;
+          state[key + 'Stored'] = mid;
+          if (othersInverted(key)) hi = mid;
+          else                     lo = mid;
+          if (Math.abs(hi - lo) < 1e-4) break;
+        }
+        state[key + 'Stored'] = lo;
+        controls[key].setStoredMM(state[key + 'Stored'], false);
       }
       recompute();
     },
@@ -700,6 +792,21 @@ const controls = {
   sd:   makeCtrl('sd',   'socket-d'),
   sdep: makeCtrl('sdep', 'socket-dep'),
 };
+
+// Click-to-promote — pointerdown on a slider thumb (no value change required)
+// promotes that key to dragWinner and recomputes. This makes click-to-focus
+// behave like a no-op drag: the clicked slider becomes the "skip-clamp" one,
+// the previously-winning slider re-yields to its current valid range (which
+// may surface or hide Min/Max applied labels and the clamped-thumb darken).
+// Without this, clicking just promoted the .active visual but left dragWinner
+// pointing at the old slider, and clamp state was stale across the board.
+for (const key of Object.keys(controls)) {
+  controls[key].slider.addEventListener('pointerdown', () => {
+    if (dragWinner === key) return;
+    dragWinner = key;
+    recompute();
+  });
+}
 
 // ── Unit toggle ───────────────────────────────────────────────────────────────
 LT.UnitToggle({
@@ -727,12 +834,19 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
 });
 
 // ── Preview ───────────────────────────────────────────────────────────────────
+// First preview after a fresh page load may hit a cold Render server (~30s wake
+// time). The overlay's sub-line carries an explanation only on that first call;
+// subsequent previews show just the primary message. Flag flips on the first
+// SUCCESSFUL response so a failed first attempt still gets the hint on retry.
+let firstPreviewDone = false;
+const COLD_START_HINT = 'First preview can take ~30 seconds while the server starts up.';
+
 async function runPreview(auto) {
   const btn  = document.getElementById('btn-preview');
   const lbl  = document.getElementById('btn-label');
   const spin = document.getElementById('spinner');
   btn.disabled = true; lbl.textContent = 'Generating…'; spin.classList.add('visible');
-  if (auto) viewport.setLoading(true, 'Building mesh…');
+  if (auto) viewport.setLoading(true, 'Building mesh…', firstPreviewDone ? '' : COLD_START_HINT);
 
   try {
     const body = {
@@ -756,6 +870,8 @@ async function runPreview(auto) {
     state.stlBlob = buf;
     viewport.loadSTL(buf);
     document.getElementById('btn-download').disabled = false;
+    firstPreviewDone = true;
+    LT.logEvent({ type: 'preview', tool: 'pivot-cup' });
   } catch (e) {
     if (!auto) alert('Preview failed: ' + e.message);
   } finally {
@@ -776,6 +892,22 @@ document.getElementById('btn-download').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([state.stlBlob], { type: 'application/octet-stream' }));
   a.download = name; a.click(); URL.revokeObjectURL(a.href);
+
+  // pl is meaningless in tube mode (no pivot length on a plain tube) — log
+  // it as empty so the Sheet column reads blank on tube rows instead of
+  // carrying a stale value from the slider's last non-tube state.
+  LT.logEvent({
+    type: 'download',
+    tool: 'pivot-cup',
+    unit: state.unit,
+    params: {
+      mode,
+      pivot_d:      +pd.toFixed(3),
+      pivot_l:      mode === 'tube' ? '' : +pl.toFixed(3),
+      socket_d:     +sd.toFixed(3),
+      socket_depth: +sdep.toFixed(3),
+    },
+  });
 });
 
 // ── Mission report ────────────────────────────────────────────────────────────
@@ -790,6 +922,59 @@ document.getElementById('btn-feedback').addEventListener('click', () => {
     'Socket depth':    f(sdep),
   };
   LT.openFeedback({ tool: 'Pivot Cup', params });
+});
+
+// ── Library: browse + submit ─────────────────────────────────────────────────
+// Beta-quality library: a Tally form collects submissions into a Google Sheet,
+// and "Browse library" opens that Sheet in a new tab so visitors can see real
+// entries (necessary for trust — nobody contributes if contributions go into
+// a black box). Phase 2 swaps Sheet-in-new-tab for an in-page picker modal
+// that fetches the Sheet's published-JSON and auto-fills params on click.
+//
+// SETUP REQUIRED: paste the Tally form share URL and the Google Sheet public
+// URL below. Until both are filled in, the buttons show a "not wired up yet"
+// message rather than navigating to invalid destinations.
+const LIBRARY_FORM_URL  = 'https://tally.so/r/obl7XV';
+const LIBRARY_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1n21_V1WWRmxYNeKPKjIzY4-xuggd1ZYmxiwbyXwhrCI/edit?usp=sharing';
+
+// Browse Library — currently just opens the Google Sheet. The <a> already has
+// target="_blank" + rel="noopener" so all we do here is keep the href in sync
+// with the constant above and show a friendly message until it's wired up.
+(function wireBrowseLibrary() {
+  const link = document.getElementById('link-browse-library');
+  if (!link) return;
+  if (LIBRARY_SHEET_URL.indexOf('REPLACE_ME') !== -1) {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      alert('The library sheet is not wired up yet — sit tight!');
+    });
+  } else {
+    link.href = LIBRARY_SHEET_URL;
+  }
+})();
+
+// Submit to Library — opens a Tally form with the current effective parameters
+// prefilled. Tally's URL-parameter prefill maps each key to a hidden form
+// field (mode, pivot_d, pivot_l, socket_d, socket_depth); the visible fields
+// on the form are truck_brand (required), truck_model, source ("measured" /
+// "dialed"), handle, and notes. Tally → connected Google Sheet → row appears
+// for the user (and everyone else) to browse via the Sheet link above.
+document.getElementById('btn-library-submit').addEventListener('click', () => {
+  const { mode, pdEff: pd, plEff: pl, sdEff: sd, sdepEff: sdep } = state;
+  // Keep numeric precision modest — three decimals is what we send to the
+  // server for STL generation; same precision is fine for the Sheet.
+  const fields = {
+    mode:         mode,
+    pivot_d:      pd.toFixed(3),
+    pivot_l:      mode === 'tube' ? '' : pl.toFixed(3),
+    socket_d:     sd.toFixed(3),
+    socket_depth: sdep.toFixed(3),
+  };
+  LT.openFeedback({
+    formUrl: LIBRARY_FORM_URL,
+    title:   'Submit to Library',
+    fields:  fields,
+  });
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

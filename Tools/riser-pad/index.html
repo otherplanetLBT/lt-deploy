@@ -111,23 +111,87 @@
       font-variant-numeric: tabular-nums; white-space: nowrap;
       flex-shrink: 0; text-align: right;
     }
-    .control-sub { font-size: 0.68rem; color: var(--text-dim); }
 
-    /* Slider — markers come from shared.css (.slider-marker.is-min / .is-max) */
+    /* Slider — markers come from shared.css (.slider-marker.is-min / .is-max).
+       Track is a CSS-var-driven gradient: the portion of the track inside the
+       active clamp window (--clamp-min-pct → --clamp-max-pct, set per-slider
+       by shared.js) uses --border; outside the clamps it dims so you can SEE
+       the dead zones rather than hitting them by surprise. Both vars default
+       to 0%/100% if shared.js hasn't pushed values yet. Mirrors pivot cup. */
     .slider-wrap { position: relative; }
     .slider-wrap input[type=range] { display: block; width: 100%; }
 
     input[type=range] {
       -webkit-appearance: none; width: 100%; height: 5px;
-      border-radius: 4px; background: var(--border); outline: none; cursor: pointer;
+      border-radius: 4px; outline: none; cursor: pointer;
+      --clamp-min-pct: 0%;
+      --clamp-max-pct: 100%;
+      background:
+        linear-gradient(
+          to right,
+          rgba(0, 0, 0, 0.20) 0%,
+          rgba(0, 0, 0, 0.20) var(--clamp-min-pct),
+          var(--border)       var(--clamp-min-pct),
+          var(--border)       var(--clamp-max-pct),
+          rgba(0, 0, 0, 0.20) var(--clamp-max-pct),
+          rgba(0, 0, 0, 0.20) 100%
+        );
     }
+    /* Thumb — small white dot. .active (toggled by shared.js on the most-
+       recently-interacted slider) bumps it up a notch and overlays a soft
+       green glow that fades into the white — recency marker + center hint. */
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 20px; height: 20px;
-      border-radius: 50%; background: var(--white); border: 2px solid var(--bg); cursor: pointer;
+      -webkit-appearance: none; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--white); border: 2px solid var(--bg);
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.25); cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
     }
     input[type=range]::-moz-range-thumb {
-      width: 20px; height: 20px;
-      border-radius: 50%; background: var(--white); border: 2px solid var(--bg); cursor: pointer;
+      width: 14px; height: 14px;
+      border-radius: 50%; background: var(--white); border: 2px solid var(--bg);
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.25); cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
+    }
+    input[type=range].active::-webkit-slider-thumb {
+      width: 17px; height: 17px;
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        var(--white);
+    }
+    input[type=range].active::-moz-range-thumb {
+      width: 17px; height: 17px;
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        var(--white);
+    }
+    input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.15); box-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
+    input[type=range]:hover::-moz-range-thumb     { transform: scale(1.15); box-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
+    /* Clamped — stored value is pinned by an active soft-clamp. White dims so
+       the thumb reads "you can't push past this." Active+clamped keeps the
+       green glow (recency signal) and only darkens the surrounding white. */
+    input[type=range].clamped::-webkit-slider-thumb {
+      background: rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].clamped::-moz-range-thumb {
+      background: rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].active.clamped::-webkit-slider-thumb {
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        rgba(255, 255, 255, 0.45);
+    }
+    input[type=range].active.clamped::-moz-range-thumb {
+      background:
+        radial-gradient(circle at center,
+                        rgba(30, 199, 61, 0.55) 0%,
+                        rgba(30, 199, 61, 0)   70%),
+        rgba(255, 255, 255, 0.45);
     }
 
     .stats-card {
@@ -195,6 +259,14 @@
       padding: 4px 10px; border-radius: 20px; pointer-events: none; display: none;
     }
 
+    /* Page load-in cascade — see ltFadeUp in shared.css. Four-step stagger
+       buys ~1s of motion while the first preview is generating, hiding the
+       moment of dead canvas behind a deliberate entrance. */
+    .site-nav   { animation: ltFadeUp 0.8s 0s    both; }
+    .gen-header { animation: ltFadeUp 0.8s 0.15s both; }
+    .sidebar    { animation: ltFadeUp 0.8s 0.3s  both; }
+    .viewport   { animation: ltFadeUp 0.8s 0.45s both; }
+
     /* ── Mobile ── */
     @media (max-width: 640px) {
       .body { flex-direction: column-reverse; }
@@ -222,6 +294,12 @@
       border-bottom: 1px solid transparent;
       transition: border-color 0.15s, background 0.15s;
     }
+    /* Threshold colour states for the value input — JS toggles these classes
+       on #val-angle as the wedge angle crosses 10° (warn) and 15° (err). The
+       same pattern can extend to other values later if needed. Focus state
+       still wins over warn/err so editing the value remains visually clear. */
+    .value-input.warn { color: var(--warn); }
+    .value-input.err  { color: var(--err); }
     .value-input:focus {
       background: var(--surface2);
       border-bottom-color: var(--accent);
@@ -235,7 +313,7 @@
 <div class="nav-accent-bar"></div>
 <nav class="site-nav">
   <canvas class="starfield-nav" aria-hidden="true"></canvas>
-  <a class="nav-logo" href="/">Longboard<span>Technology</span></a>
+  <a class="nav-logo" href="https://longboardtechnology.com">Longboard<span>Technology</span></a>
   <ul class="nav-links">
     <li><a href="/pivot-cup/">Pivot Cup</a></li>
     <li><a href="/riser-pad/" class="active">Riser Pad</a></li>
@@ -292,15 +370,14 @@
               <div class="slider-marker is-min" id="min-marker-height"></div>
               <div class="slider-marker is-max" id="max-marker-height"></div>
             </div>
-            <span class="control-sub">Height at mid-length of pad</span>
           </div>
 
           <!-- Angle -->
-          <div class="control-row" style="margin-top:14px;">
+          <div class="control-row" style="margin-top:22px;">
             <div class="control-header">
               <div class="control-name-wrap">
                 <span class="control-name">Wedge Angle</span>
-                <button class="info-btn" type="button" aria-label="More info" data-tooltip="How much you will add or subtract from your Baseplate Angle.">i</button>
+                <button class="info-btn" type="button" aria-label="More info" data-tooltip="How much you'll add or subtract from your baseplate angle. Above 10° is aggressive; above 15° is not recommended.">i</button>
                 <span class="clamp-label" id="clamp-angle">Max applied</span>
               </div>
               <input class="value-input" id="val-angle" type="text" value="0.0°" aria-label="Wedge angle">
@@ -310,7 +387,6 @@
               <div class="slider-marker is-min" id="min-marker-angle"></div>
               <div class="slider-marker is-max" id="max-marker-angle"></div>
             </div>
-            <span class="control-sub">0° = flat riser</span>
           </div>
         </div>
 
@@ -358,6 +434,7 @@
       <div class="loading-overlay visible" id="loading-overlay">
         <div class="loading-ring"></div>
         <div class="loading-msg" id="loading-msg">Generating preview…</div>
+        <div class="loading-sub" id="loading-sub"></div>
       </div>
       <div class="viewport-status" id="viewport-status"></div>
       <div class="viewport-hint" id="viewport-hint">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
@@ -452,6 +529,13 @@ function recompute() {
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
+// Wedge angle thresholds: under 10° is unremarkable; 10-15° is aggressive
+// (warn); above 15° is not recommended for typical setups (err). The angle
+// value input flips colour as it crosses each threshold so users get an
+// ambient cue while dialing — the info-icon tooltip carries the explanation.
+const ANGLE_WARN_DEG = 10;
+const ANGLE_ERR_DEG  = 15;
+
 function updateStats() {
   const h     = state.heightEff;
   const a     = state.angleEff;
@@ -466,6 +550,11 @@ function updateStats() {
 
   const thinClass = thin < MIN_WALL ? 'err' : 'ok';
   document.getElementById('stat-thin').className = 'stat-val ' + thinClass;
+
+  // Angle warn/err classes on the value input (only — not the slider thumb).
+  const angleVal = document.getElementById('val-angle');
+  angleVal.classList.toggle('err',  a >  ANGLE_ERR_DEG);
+  angleVal.classList.toggle('warn', a >  ANGLE_WARN_DEG && a <= ANGLE_ERR_DEG);
 
   document.getElementById('btn-preview').disabled = false;
 }
@@ -504,9 +593,10 @@ const heightCtrl = LT.SliderControl({
   onInput: (mm, source) => {
     state.heightStored = mm;
     if (source === 'drag') dragWinner = 'height';
-    // 'type' commit: leave dragWinner unchanged; storedMM was already
-    // clamped to textMin/textMax inside the control. Page-level clamp to
-    // current valid range is applied below.
+    // Type commit: clamp to current valid range (drag yields normally — the
+    // riser pad's only cross-constraint (thin_end >= MIN_WALL) can't push
+    // either slider's range to inversion within the visible slider bounds,
+    // so there's no "brackets would cross" case to guard against here).
     if (source === 'type') {
       const r = heightRange();
       state.heightStored = clamp(state.heightStored, r.min, r.max);
@@ -534,6 +624,7 @@ const angleCtrl = LT.SliderControl({
   onInput: (deg, source) => {
     state.angleStored = deg;
     if (source === 'drag') dragWinner = 'angle';
+    // Type commit: clamp to current valid range. Drag yields — see height handler.
     if (source === 'type') {
       const r = angleRange();
       state.angleStored = clamp(state.angleStored, r.min, r.max);
@@ -541,6 +632,21 @@ const angleCtrl = LT.SliderControl({
     }
     recompute();
   },
+});
+
+// Click-to-promote — pointerdown on a slider thumb (no value change required)
+// promotes that key to dragWinner and recomputes, so Min/Max-applied labels
+// and clamped-thumb darkening reflect the click immediately rather than
+// waiting for the user to move something.
+heightCtrl.slider.addEventListener('pointerdown', () => {
+  if (dragWinner === 'height') return;
+  dragWinner = 'height';
+  recompute();
+});
+angleCtrl.slider.addEventListener('pointerdown', () => {
+  if (dragWinner === 'angle') return;
+  dragWinner = 'angle';
+  recompute();
 });
 
 // ── Unit toggle ───────────────────────────────────────────────────────────────
@@ -566,12 +672,19 @@ document.querySelectorAll('.pattern-btn').forEach(b => b.addEventListener('click
 }));
 
 // ── Preview / Download ────────────────────────────────────────────────────────
+// First preview after a fresh page load may hit a cold Render server (~30s wake
+// time). The overlay's sub-line carries an explanation only on that first call;
+// subsequent previews show just the primary message. Flag flips on the first
+// SUCCESSFUL response so a failed first attempt still gets the hint on retry.
+let firstPreviewDone = false;
+const COLD_START_HINT = 'First preview can take ~30 seconds while the server starts up.';
+
 async function runPreview(auto) {
   const btn = document.getElementById('btn-preview');
   const lbl = document.getElementById('btn-label');
   const sp  = document.getElementById('spinner');
   btn.disabled = true; lbl.textContent = 'Generating…'; sp.classList.add('visible');
-  if (auto) viewport.setLoading(true, 'Generating preview…');
+  if (auto) viewport.setLoading(true, 'Generating preview…', firstPreviewDone ? '' : COLD_START_HINT);
   try {
     const resp = await fetch('/api/riser-pad/slice', {
       method:  'POST',
@@ -591,6 +704,8 @@ async function runPreview(auto) {
     state.stlBlob = buf;
     viewport.loadSTL(buf);
     document.getElementById('btn-download').disabled = false;
+    firstPreviewDone = true;
+    LT.logEvent({ type: 'preview', tool: 'riser-pad' });
   } catch (e) {
     if (!auto) alert('Request failed: ' + e.message);
   } finally {
@@ -610,6 +725,17 @@ document.getElementById('btn-download').addEventListener('click', () => {
   a.href = URL.createObjectURL(new Blob([state.stlBlob], { type: 'application/octet-stream' }));
   a.click();
   URL.revokeObjectURL(a.href);
+
+  LT.logEvent({
+    type: 'download',
+    tool: 'riser-pad',
+    unit: state.unit,
+    params: {
+      style:         state.style,
+      center_height: +state.heightEff.toFixed(3),
+      angle:         +state.angleEff.toFixed(3),
+    },
+  });
 });
 
 // ── Mission report ────────────────────────────────────────────────────────────

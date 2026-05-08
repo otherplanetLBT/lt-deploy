@@ -1,0 +1,10 @@
+# Netlify _redirects — Tools site (tools.longboardtechnology.com)
+#
+# Proxy /api/* to the Render-hosted Flask backend (lt-tools).
+# Status 200 = proxy (transparent), not 301/302 = redirect: the browser sees
+# the response as if it came from tools.longboardtechnology.com, so requests
+# are same-origin and no CORS plumbing is needed on the Flask side.
+#
+# Render still owns the API surface; only the static page assets moved here.
+
+/api/*  https://lt-tools.onrender.com/api/:splat  200

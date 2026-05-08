@@ -39,7 +39,7 @@
 
   --ok:          #3ecf7a;
   --warn:        #f5a623;
-  --err:         #e55353;
+  --err:         #f04a3c;     /* warm-shifted red, ~85% saturation — punchier on the navy/surface backdrop than the previous #e55353. Sits in the same hue lane as the octopus-orange mesh, so the warm-warning palette feels coherent. */
 
   /* Anodized purple — for slider clamp markers. Three stops give a metallic
      "bar caught by a top-light" gradient. Used in shared.css below. */
@@ -227,6 +227,25 @@ a { color: inherit; }
 .btn-feedback:hover { color: var(--text); background: var(--surface-2); }
 .btn-feedback:active { transform: translateY(1px); }
 
+/* Library submit — sits above .btn-feedback in the "give back" zone. Slightly
+   louder than .btn-feedback because it's the higher-volume positive-valence
+   contribution (sharing a working cup vs. filing a problem). Same structural
+   treatment, but full-strength text colour by default and an accent hover so
+   it reads as a real call-to-action without competing with the primary
+   Preview/Download row above. */
+.btn-library {
+  background: none; color: var(--text); border: none;
+  padding: 9px 12px;
+  font-family: var(--display);
+  font-size: 0.62rem; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  cursor: pointer; text-align: center; width: 100%;
+  min-height: 0; border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.btn-library:hover { color: var(--accent); background: var(--accent-dim); }
+.btn-library:active { transform: translateY(1px); }
+
 .btn-row { display: flex; flex-direction: column; gap: 8px; }
 @media (max-width: 640px) { .btn-row { flex-direction: row; } }
 
@@ -237,7 +256,7 @@ a { color: inherit; }
 .feedback-modal {
   position: fixed; inset: 0; z-index: 1000;
   display: none; align-items: center; justify-content: center;
-  padding: 20px;
+  padding: 12px;                                 /* tighter than 20px so taller forms (e.g. Library Submission) fit without scrolling on most desktops */
 }
 .feedback-modal.visible { display: flex; }
 .feedback-backdrop {
@@ -249,7 +268,7 @@ a { color: inherit; }
 .feedback-frame {
   position: relative; z-index: 1;
   width: 100%; max-width: 640px;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100vh - 24px);                /* matches the 12px*2 modal padding */
   display: flex; flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border-mid);
@@ -259,7 +278,7 @@ a { color: inherit; }
 }
 .feedback-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px;
+  padding: 8px 16px;                             /* trimmed from 12px to claw back vertical space */
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-mid);
   flex-shrink: 0;
@@ -284,7 +303,7 @@ a { color: inherit; }
   min-height: 0;
 }
 .feedback-iframe {
-  width: 100%; min-height: 600px;       /* dynamicHeight postMessage updates this at runtime */
+  width: 100%; min-height: 480px;       /* dynamicHeight postMessage overrides at runtime; min-height absorbs the brief moment before Tally's first height event arrives */
   border: none; display: block;
 }
 @media (max-width: 640px) {
@@ -377,6 +396,14 @@ a { color: inherit; }
 .spinner.visible { display: block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Page load-in animation — pages stagger nav → header → sidebar → viewport
+   so the initial "blank" moment before geometry renders fills with motion
+   instead of dead space. Mirrors the Landing page's fadeUp pattern. */
+@keyframes ltFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Validation messages ──────────────────────────────────────────────────── */
 .validation-msg {
   font-size: 0.7rem;
@@ -421,11 +448,15 @@ a { color: inherit; }
 }
 .slider-marker.visible { display: block; }
 
+/* Horizontal arms — extended 1px INTO the vertical bar with the inner-facing
+   corners flattened (border-radius only on the outer end). The 1px overlap
+   plus the flat inner edge eliminates the sub-pixel corner gap that was
+   visible where rounded vertical met rounded horizontal — the vertical bar
+   visually "owns" the join, the arms read as continuous extensions. */
 .slider-marker::before,
 .slider-marker::after {
   content: ''; position: absolute;
   width: 7px; height: 2px;
-  border-radius: 1px;
   background: linear-gradient(
     to bottom,
     var(--anodize-bright) 0%,
@@ -436,10 +467,10 @@ a { color: inherit; }
     inset 1px 0 0 rgba(255, 255, 255, 0.22),
     0 0 3px var(--anodize-glow);
 }
-.slider-marker.is-min::before { top: 0;    left: 100%; }
-.slider-marker.is-min::after  { bottom: 0; left: 100%; }
-.slider-marker.is-max::before { top: 0;    right: 100%; }
-.slider-marker.is-max::after  { bottom: 0; right: 100%; }
+.slider-marker.is-min::before { top: 0;    left:  calc(100% - 1px); border-radius: 0 1px 1px 0; }
+.slider-marker.is-min::after  { bottom: 0; left:  calc(100% - 1px); border-radius: 0 1px 1px 0; }
+.slider-marker.is-max::before { top: 0;    right: calc(100% - 1px); border-radius: 1px 0 0 1px; }
+.slider-marker.is-max::after  { bottom: 0; right: calc(100% - 1px); border-radius: 1px 0 0 1px; }
 
 /* ── Starfield canvas helper ──────────────────────────────────────────────── */
 /* IMPORTANT: <canvas> is a replaced element with intrinsic dimensions (default
@@ -510,5 +541,17 @@ canvas.starfield-nav {
   font-size: 0.7rem; letter-spacing: 0.1em;
   color: var(--text-dim);
   text-transform: uppercase;
+}
+/* Secondary line under the primary loading message — used to explain the
+   ~30s cold-start wait on the first preview after a fresh page load. Hidden
+   by default; shared.js's setLoading(on, msg, submsg) shows/hides via
+   inline display style. Smaller, dimmer, and not uppercase so it reads as
+   contextual explanation rather than a status header. */
+.loading-sub {
+  display: none;
+  max-width: 320px; padding: 0 16px;
+  font-size: 0.65rem; line-height: 1.5;
+  color: var(--text-faint);
+  text-align: center;
 }
 @media (max-width: 640px) { .viewport-hint { display: none; } }
