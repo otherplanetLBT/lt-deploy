@@ -24,4 +24,4 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn site_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
     autoDeploy: true
-    healthCheckPath: /
+    healthCheckPath: /api/health
