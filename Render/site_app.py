@@ -50,7 +50,7 @@ RISER_STL_DIR = os.path.join(ASSETS, 'riser-pad-stls')
 #   skeleton -> Skeleton.stl
 # To add a new style: register the name here AND drop a matching
 # `<Stylename>.stl` file into assets/riser-pad-stls/. No other code changes.
-KNOWN_STYLES  = ['solid', 'skeleton']
+KNOWN_STYLES  = ['solid', 'skeleton', 'drop-thru']
 DEFAULT_STYLE = 'solid'
 
 
