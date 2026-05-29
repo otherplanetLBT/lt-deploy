@@ -245,13 +245,19 @@
 
   @media (max-width: 640px) {
     .body { flex-direction: column; overflow-y: auto; overflow-x: hidden; }
-    .viewport { height: 56vw; flex: none; }
+    .viewport {
+      order: 0;
+      position: sticky; top: 0; z-index: 10;
+      height: 56vw; flex: none;
+    }
     .sidebar {
+      order: 1;
       width: 100%; flex-shrink: 0;
       border-right: none; border-bottom: 1px solid var(--border-mid);
       max-height: none; overflow: visible;
     }
     .sidebar-right {
+      order: 2;
       display: block;
       width: 100%; flex-shrink: 0;
       border-left: none; border-top: 1px solid var(--border-mid);
