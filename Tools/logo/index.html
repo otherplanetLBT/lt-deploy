@@ -632,6 +632,7 @@
   let gearAngle = 0, t0 = null, prevT = null;
   let isRecording = false, exportPaused = false;
   let isPaused = false, simT = 0, resumePending = false;
+  let frameRendering = false;
   const STEP_DT = 1 / 30;
 
   function applyTransforms(t, ga) {
@@ -678,7 +679,6 @@
       const vb = svg.getAttribute('viewBox').split(/[\s,]+/).map(Number);
       const vbW = vb[2], vbH = vb[3];
       const W = vbW * scale, H = vbH * scale;
-      canvas.width = W; canvas.height = H;
       const svgStr = new XMLSerializer().serializeToString(svg)
         .replace(/width="[^"]*"/, `width="${W}"`)
         .replace(/height="[^"]*"/, `height="${H}"`);
@@ -686,7 +686,11 @@
       const url = URL.createObjectURL(blob);
       const img = new Image();
       img.onload = () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (canvas.width !== W || canvas.height !== H) {
+          canvas.width = W; canvas.height = H;
+        } else {
+          ctx.clearRect(0, 0, W, H);
+        }
         ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
         resolve();
@@ -761,7 +765,10 @@
       applyTransforms(t, gearAngle);
     }
 
-    if (isRecording && recordCanvas) svgToCanvas(recordCanvas, recordCtx, exportScale);
+    if (isRecording && recordCanvas && !frameRendering) {
+      frameRendering = true;
+      svgToCanvas(recordCanvas, recordCtx, exportScale).then(() => { frameRendering = false; });
+    }
 
     requestAnimationFrame(frame);
   }
@@ -773,6 +780,7 @@
     const btn = document.getElementById('btnWebM');
     const status = document.getElementById('exportStatus');
 
+    frameRendering = false;
     recordCanvas = document.createElement('canvas');
     recordCanvas.width = 540 * exportScale; recordCanvas.height = 340 * exportScale;
     recordCtx = recordCanvas.getContext('2d');
@@ -792,6 +800,7 @@
       });
       a.click();
       isRecording = false;
+      frameRendering = false;
       btn.textContent = '⬇ WebM';
       btn.disabled = false;
       document.getElementById('btnPNG').disabled = false;
