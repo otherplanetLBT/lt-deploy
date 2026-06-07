@@ -183,21 +183,24 @@ def to_stl_bytes(manifold, header_text=b"Riser Pad - Longboard Technology"):
 # ── Validation ───────────────────────────────────────────────────────────────
 
 def min_center_height(angle_deg):
-    """Minimum legal center height for the given wedge angle."""
-    return MIN_WALL_MM + PAD_HALF_LEN * math.tan(math.radians(angle_deg))
+    """Minimum legal center height for the given wedge angle magnitude."""
+    return MIN_WALL_MM + PAD_HALF_LEN * math.tan(math.radians(abs(angle_deg)))
 
 
 def thin_end_height(center_h, angle_deg):
-    """Height of the pad at the thin (−X) end."""
-    return center_h - PAD_HALF_LEN * math.tan(math.radians(angle_deg))
+    """Height of the thinner end of the pad (sign of angle_deg does not matter)."""
+    return center_h - PAD_HALF_LEN * math.tan(math.radians(abs(angle_deg)))
 
 
 def validate(center_h, angle_deg, master_height):
-    """Raises ValueError on first failing constraint."""
+    """Raises ValueError on first failing constraint.
+    angle_deg may be negative (flip direction) — constraints use the magnitude.
+    """
     if center_h <= 0:
         raise ValueError("Center height must be greater than zero.")
-    if angle_deg < 0 or angle_deg > MAX_ANGLE_DEG:
-        raise ValueError(f"Wedge angle must be between 0 and {MAX_ANGLE_DEG}°.")
+    abs_angle = abs(angle_deg)
+    if abs_angle > MAX_ANGLE_DEG:
+        raise ValueError(f"Wedge angle must be between -{MAX_ANGLE_DEG}° and {MAX_ANGLE_DEG}°.")
     thin = thin_end_height(center_h, angle_deg)
     # 1e-3 mm (one micron) slack absorbs FP noise from the JS round-trip
     # (.toFixed(3)) at exact constraint boundaries — the UI can present a value
@@ -205,10 +208,10 @@ def validate(center_h, angle_deg, master_height):
     if thin < MIN_WALL_MM - 1e-3:
         raise ValueError(
             f"Thin end would be {thin:.2f} mm — below {MIN_WALL_MM} mm minimum. "
-            f"Minimum center height for {angle_deg:.1f}° is "
-            f"{min_center_height(angle_deg):.2f} mm."
+            f"Minimum center height for {abs_angle:.1f}° is "
+            f"{min_center_height(abs_angle):.2f} mm."
         )
-    thick = center_h + PAD_HALF_LEN * math.tan(math.radians(angle_deg))
+    thick = center_h + PAD_HALF_LEN * math.tan(math.radians(abs_angle))
     if thick > master_height:
         raise ValueError(
             f"Thick end ({thick:.2f} mm) exceeds master STL height "
@@ -220,6 +223,7 @@ def validate(center_h, angle_deg, master_height):
 
 def filename_for(style, center_h, angle_deg):
     """Standard STL filename for a generated riser pad."""
+    slug       = style.lower().replace(' ', '_')
     angle_str  = f'{angle_deg:.1f}deg'.replace('.', 'p')
     height_str = f'{center_h:.1f}mm'.replace('.', 'p')
-    return f'riser_{style}_{angle_str}_{height_str}.stl'
+    return f'riser_{slug}_{angle_str}_{height_str}.stl'

@@ -78,13 +78,13 @@
     /* Pattern buttons — mirrors pivot cup .mode-grid / .mode-btn so both
        generators share the same square-card selector idiom. */
     .pattern-group {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
     }
     .pattern-btn {
       display: flex; flex-direction: column; align-items: center; gap: 4px;
-      padding: 10px 6px; border-radius: 8px; cursor: pointer;
+      padding: 10px 4px; border-radius: 8px; cursor: pointer;
       border: 1px solid var(--border); background: var(--surface-2);
-      font-family: var(--mono); font-size: 0.7rem; color: var(--text-mid);
+      font-family: var(--mono); font-size: 0.65rem; color: var(--text-mid);
       transition: all 0.15s; text-align: center; line-height: 1.2;
       min-width: 0;
     }
@@ -92,7 +92,45 @@
     .pattern-btn.active {
       border-color: var(--accent); background: var(--accent-dim); color: var(--accent);
     }
-    .pattern-icon { font-size: 1.3rem; line-height: 1; }
+    .pattern-icon { font-size: 1.2rem; line-height: 1; }
+
+    /* Library pull-down */
+    .library-section { display: flex; flex-direction: column; gap: 0; }
+    .library-toggle {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 10px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface-2);
+      font-family: var(--mono); font-size: 0.65rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+      transition: all 0.15s;
+    }
+    .library-toggle:hover { border-color: var(--border-mid); color: var(--text); }
+    .library-toggle.has-active { border-color: var(--accent); color: var(--accent); }
+    .library-chevron { font-size: 0.8rem; transition: transform 0.2s; line-height: 1; }
+    .library-chevron.open { transform: rotate(180deg); }
+    .library-drawer {
+      overflow: hidden; max-height: 0;
+      transition: max-height 0.25s ease;
+    }
+    .library-drawer.open { max-height: 240px; overflow-y: auto; }
+    .library-drawer-inner {
+      padding: 4px 0 2px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .library-item {
+      padding: 7px 10px; border-radius: 5px; cursor: pointer;
+      font-family: var(--mono); font-size: 0.7rem; color: var(--text-mid);
+      transition: all 0.15s; border: 1px solid transparent;
+    }
+    .library-item:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+    .library-item.active {
+      color: var(--accent); background: var(--accent-dim); border-color: var(--accent);
+    }
+    .library-empty {
+      padding: 8px 10px;
+      font-family: var(--mono); font-size: 0.65rem; color: var(--text-dim);
+      font-style: italic;
+    }
 
     .control-row { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
     .control-header {
@@ -193,6 +231,18 @@
                         rgba(30, 199, 61, 0)   70%),
         rgba(255, 255, 255, 0.45);
     }
+
+    /* Angle flip toggle — sits left of the angle value input */
+    .angle-sign-wrap { display: flex; align-items: center; gap: 4px; }
+    .angle-flip-btn {
+      padding: 3px 7px; border-radius: 4px; cursor: pointer;
+      border: 1px solid var(--border); background: none;
+      font-family: var(--mono); font-size: 0.65rem; font-weight: 700; line-height: 1;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--text-dim); transition: all 0.15s; flex-shrink: 0;
+    }
+    .angle-flip-btn:hover { border-color: var(--border-mid); color: var(--text); }
+    .angle-flip-btn.flipped { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
 
     .stats-card {
       background: var(--surface2); border: 1px solid var(--border);
@@ -339,14 +389,29 @@
         <div>
           <div class="section-label">Style</div>
           <div class="pattern-group">
-            <button class="pattern-btn active" data-style="solid">
+            <button class="pattern-btn active" data-style="Solid">
               <span class="info-btn" role="button" tabindex="0" aria-label="More info" data-tooltip="Solid body — Best for soft Shock Risers, or custom infill.">i</span>
               <span class="pattern-icon">■</span>Solid
             </button>
-            <button class="pattern-btn" data-style="skeleton">
+            <button class="pattern-btn" data-style="Skeleton">
               <span class="info-btn" role="button" tabindex="0" aria-label="More info" data-tooltip="Ribbed body — Best for Solid Infill.">i</span>
               <span class="pattern-icon">▦</span>Skeleton
             </button>
+            <button class="pattern-btn" data-style="Drop-thru">
+              <span class="info-btn" role="button" tabindex="0" aria-label="More info" data-tooltip="Drop-through mount — sits below the deck plane.">i</span>
+              <span class="pattern-icon">⬓</span>Drop-thru
+            </button>
+          </div>
+          <div class="library-section" style="margin-top:8px;">
+            <button class="library-toggle" id="library-toggle" aria-expanded="false">
+              <span>Library</span>
+              <span class="library-chevron" id="library-chevron">▾</span>
+            </button>
+            <div class="library-drawer" id="library-drawer" role="listbox" aria-label="Library styles">
+              <div class="library-drawer-inner" id="library-list">
+                <span class="library-empty">Loading…</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -380,7 +445,10 @@
                 <button class="info-btn" type="button" aria-label="More info" data-tooltip="How much you'll add or subtract from your baseplate angle. Above 10° is aggressive; above 15° is not recommended.">i</button>
                 <span class="clamp-label" id="clamp-angle">Max applied</span>
               </div>
-              <input class="value-input" id="val-angle" type="text" value="0.0°" aria-label="Wedge angle">
+              <div class="angle-sign-wrap">
+                <button class="angle-flip-btn" id="btn-flip-angle" type="button" title="Flip wedge direction" aria-label="Flip wedge direction" aria-pressed="false">Flip</button>
+                <input class="value-input" id="val-angle" type="text" value="0.0°" aria-label="Wedge angle">
+              </div>
             </div>
             <div class="slider-wrap">
               <input type="range" id="slider-angle" min="0" max="20" step="0.5" value="0">
@@ -462,14 +530,20 @@ const atanDeg = r => Math.atan(r) * 180 / Math.PI;
 
 // ── Page state ────────────────────────────────────────────────────────────────
 const state = {
-  style:        'solid',  // 'solid' | 'skeleton'
+  style:        'Solid',  // display name — matches STL filename without extension
   heightStored: 5.0,      // mm — what user dragged/typed
   angleStored:  0.0,      // degrees
   heightEff:    5.0,
-  angleEff:     0.0,
+  angleEff:     0.0,      // magnitude after clamping — always ≥ 0
+  flipAngle:    false,    // when true, effective angle is negated before API call
   unit:         'mm',
   stlBlob:      null,
 };
+
+// Signed angle — applied after all constraint logic. Only place that reads flipAngle.
+function signedAngle() {
+  return state.flipAngle ? -state.angleEff : state.angleEff;
+}
 
 let dragWinner = null;   // 'height' | 'angle' | null
 
@@ -556,6 +630,12 @@ function updateStats() {
   angleVal.classList.toggle('err',  a >  ANGLE_ERR_DEG);
   angleVal.classList.toggle('warn', a >  ANGLE_WARN_DEG && a <= ANGLE_ERR_DEG);
 
+  // Display the signed angle. SliderControl always writes a positive value;
+  // we prepend '-' after the fact when flipped. Guard prevents double-prepend.
+  if (state.flipAngle && a > 0 && !angleVal.value.startsWith('-')) {
+    angleVal.value = '-' + angleVal.value;
+  }
+
   document.getElementById('btn-preview').disabled = false;
 }
 
@@ -622,17 +702,84 @@ const angleCtrl = LT.SliderControl({
   decimalsAngle: 1,
   clampLabelText: { min: 'Min applied', max: 'Max applied', extended: 'Extended' },
   onInput: (deg, source) => {
-    state.angleStored = deg;
     if (source === 'drag') dragWinner = 'angle';
-    // Type commit: clamp to current valid range. Drag yields — see height handler.
     if (source === 'type') {
       const r = angleRange();
-      state.angleStored = clamp(state.angleStored, r.min, r.max);
+      state.angleStored = clamp(deg, r.min, r.max);
       angleCtrl.setStoredMM(state.angleStored, false);
+    } else {
+      state.angleStored = deg;
     }
     recompute();
   },
 });
+
+// ── Typed angle intercept ────────────────────────────────────────────────────
+// Problem: SliderControl clamps internally, so typing '-10' arrives in onInput
+// as 0 — the negative is lost before our code sees it.
+//
+// Fix: track the raw typed string on every keystroke ('input' event, fires before
+// SliderControl processes it). On commit, our handler fires AFTER SliderControl
+// (no capture flag — same-element listeners fire in registration order, and we
+// register after SliderControl). We use the tracked raw value to correct state.
+//
+// Two cases handled:
+//   typed negative  → flip on,  override state.angleStored with magnitude
+//   typed positive while flipped → flip off, state already correct from SliderControl
+//
+// Focus: SliderControl reformats from internal positive state on focus, wiping
+// the '-' we prepended. rAF fires after that reformat, re-applying the sign.
+(function () {
+  const inp = document.getElementById('val-angle');
+  let rawTyped = null;
+
+  inp.addEventListener('focus', () => {
+    rawTyped = null;   // clear any stale value from previous focus session
+    requestAnimationFrame(() => {
+      if (state.flipAngle && state.angleEff > 0 && !inp.value.startsWith('-')) {
+        inp.value = '-' + inp.value;
+      }
+    });
+  });
+
+  // Capture every keystroke before SliderControl sees it
+  inp.addEventListener('input', () => { rawTyped = inp.value; });
+
+  function handleCommit() {
+    if (rawTyped === null) return;
+    const raw = rawTyped;
+    rawTyped = null;
+
+    const num = parseFloat(raw);
+    if (isNaN(num)) return;
+
+    if (num < 0) {
+      // Negative typed → flip on, correct the state SliderControl clamped to 0
+      state.flipAngle = true;
+      updateFlipBtn();
+      const mag = Math.min(-num, ANGLE_MAX);
+      const r = angleRange();
+      state.angleStored = clamp(mag, r.min, r.max);
+      angleCtrl.setStoredMM(state.angleStored, false);
+      recompute();
+      state.stlBlob = null;
+      document.getElementById('btn-download').disabled = true;
+      runPreview(true);
+    } else if (state.flipAngle) {
+      // Positive typed while flipped → un-flip; SliderControl already set angleStored correctly
+      state.flipAngle = false;
+      updateFlipBtn();
+      recompute();
+      state.stlBlob = null;
+      document.getElementById('btn-download').disabled = true;
+      runPreview(true);
+    }
+  }
+
+  // No capture flag: fires AFTER SliderControl's listeners (registration-order guarantee)
+  inp.addEventListener('blur',    handleCommit);
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleCommit(); });
+}());
 
 // Click-to-promote — pointerdown on a slider thumb (no value change required)
 // promotes that key to dragWinner and recomputes, so Min/Max-applied labels
@@ -661,15 +808,82 @@ const unitToggle = LT.UnitToggle({
   },
 });
 
-// ── Style selection ───────────────────────────────────────────────────────────
-document.querySelectorAll('.pattern-btn').forEach(b => b.addEventListener('click', () => {
-  document.querySelectorAll('.pattern-btn').forEach(x => x.classList.remove('active'));
-  b.classList.add('active');
-  state.style = b.dataset.style;
+// ── Angle flip toggle ─────────────────────────────────────────────────────────
+const flipBtn = document.getElementById('btn-flip-angle');
+
+function updateFlipBtn() {
+  flipBtn.classList.toggle('flipped', state.flipAngle);
+  flipBtn.setAttribute('aria-pressed', state.flipAngle);
+}
+
+flipBtn.addEventListener('click', () => {
+  state.flipAngle = !state.flipAngle;
+  updateFlipBtn();
+  recompute();   // update display immediately before the async fetch starts
   state.stlBlob = null;
   document.getElementById('btn-download').disabled = true;
   runPreview(true);
+});
+
+// ── Style selection ───────────────────────────────────────────────────────────
+function setStyle(name) {
+  state.style   = name;
+  state.stlBlob = null;
+  document.getElementById('btn-download').disabled = true;
+  runPreview(true);
+}
+
+function clearAllStyleActive() {
+  document.querySelectorAll('.pattern-btn').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.library-item').forEach(x => x.classList.remove('active'));
+  document.getElementById('library-toggle').classList.remove('has-active');
+}
+
+document.querySelectorAll('.pattern-btn').forEach(b => b.addEventListener('click', () => {
+  clearAllStyleActive();
+  b.classList.add('active');
+  setStyle(b.dataset.style);
 }));
+
+// ── Library pull-down ─────────────────────────────────────────────────────────
+const libraryToggle  = document.getElementById('library-toggle');
+const libraryDrawer  = document.getElementById('library-drawer');
+const libraryChevron = document.getElementById('library-chevron');
+const libraryList    = document.getElementById('library-list');
+
+libraryToggle.addEventListener('click', () => {
+  const open = libraryDrawer.classList.toggle('open');
+  libraryChevron.classList.toggle('open', open);
+  libraryToggle.setAttribute('aria-expanded', open);
+});
+
+function renderLibraryItems(names) {
+  if (!names.length) {
+    libraryList.innerHTML = '<span class="library-empty">No library items yet.</span>';
+    return;
+  }
+  libraryList.innerHTML = names.map(name =>
+    `<div class="library-item" role="option" data-style="${name}">${name}</div>`
+  ).join('');
+  libraryList.querySelectorAll('.library-item').forEach(item => {
+    item.addEventListener('click', () => {
+      clearAllStyleActive();
+      item.classList.add('active');
+      libraryToggle.classList.add('has-active');
+      setStyle(item.dataset.style);
+    });
+  });
+}
+
+async function loadLibrary() {
+  try {
+    const resp  = await fetch('/api/riser-pad/library');
+    const names = resp.ok ? await resp.json() : [];
+    renderLibraryItems(names);
+  } catch {
+    renderLibraryItems([]);
+  }
+}
 
 // ── Preview / Download ────────────────────────────────────────────────────────
 // First preview after a fresh page load may hit a cold Render server (~30s wake
@@ -692,7 +906,7 @@ async function runPreview(auto) {
       body: JSON.stringify({
         style:         state.style,
         center_height: state.heightEff,
-        angle:         state.angleEff,
+        angle:         signedAngle(),
       }),
     });
     if (!resp.ok) {
@@ -719,9 +933,11 @@ document.getElementById('btn-preview').addEventListener('click', () => runPrevie
 document.getElementById('btn-download').addEventListener('click', () => {
   if (!state.stlBlob) return;
   const a  = document.createElement('a');
-  const as = state.angleEff.toFixed(1).replace('.', 'p') + 'deg';
   const hs = state.heightEff.toFixed(1).replace('.', 'p') + 'mm';
-  a.download = `riser_${state.style}_${as}_${hs}.stl`;
+  const styleSlug = state.style.toLowerCase().replace(/\s+/g, '_');
+  const sa  = signedAngle();
+  const as  = sa.toFixed(1).replace('.', 'p') + 'deg';  // e.g. -10p0deg
+  a.download = `riser_${styleSlug}_${as}_${hs}.stl`;
   a.href = URL.createObjectURL(new Blob([state.stlBlob], { type: 'application/octet-stream' }));
   a.click();
   URL.revokeObjectURL(a.href);
@@ -733,25 +949,20 @@ document.getElementById('btn-download').addEventListener('click', () => {
     params: {
       style:         state.style,
       center_height: +state.heightEff.toFixed(3),
-      angle:         +state.angleEff.toFixed(3),
+      angle:         +signedAngle().toFixed(3),
     },
   });
 });
 
 // ── Mission report ────────────────────────────────────────────────────────────
 document.getElementById('btn-feedback').addEventListener('click', () => {
-  const { style, heightEff: h, angleEff: a, unit } = state;
+  const { style, heightEff: h, unit } = state;
   const params = {
-    'Style':         style.charAt(0).toUpperCase() + style.slice(1),
+    'Style':         style,
     'Center height': LT.fmt.formatLen(h, unit, 1, 3),
-    'Wedge angle':   a.toFixed(1) + '°',
+    'Wedge angle':   signedAngle().toFixed(1) + '°',
   };
   LT.openFeedback({ tool: 'Riser Pad', params });
 });
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-recompute();
-runPreview(true);
-</script>
-</body>
-</html>
+// ── Boot ─────────────────�

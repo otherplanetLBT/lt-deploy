@@ -12,6 +12,7 @@ Routes:
     /api/health                    GET  -> 200 'ok' (warmup/cold-start ping)
     /api/log-event                 POST -> 204 (forwards usage event to Sheet)
     /api/pivot-cup/generate        POST -> STL bytes
+    /api/riser-pad/library         GET  -> JSON list of library style names
     /api/riser-pad/slice           POST -> STL bytes
     /api/riser-pad/validate        POST -> validation JSON
 
@@ -43,15 +44,11 @@ from generators import riser_pad as rp
 # -- Riser pad master STL registry --------------------------------------------
 RISER_STL_DIR = os.path.join(ASSETS, 'riser-pad-stls')
 
-# -- Style -> master STL: fixed naming convention -----------------------------
-# Style name is the lowercase identifier used in the API + UI.
-# Master STL filename is the capitalised style name + '.stl'.
-#   solid    -> Solid.stl
-#   skeleton -> Skeleton.stl
-# To add a new style: register the name here AND drop a matching
-# `<Stylename>.stl` file into assets/riser-pad-stls/. No other code changes.
-KNOWN_STYLES  = ['solid', 'skeleton', 'drop-thru']
-DEFAULT_STYLE = 'solid'
+# The three defaults are hardcoded in the UI with icons/tooltips/order.
+# Everything else in RISER_STL_DIR is a library item returned by /api/riser-pad/library.
+# To add a library item: drop <Name>.stl into assets/riser-pad-stls/ and push.
+DEFAULT_STYLE     = 'Solid'
+DEFAULT_STL_NAMES = {'Solid', 'Skeleton', 'Drop-thru'}
 
 
 # -- Usage logging webhook ----------------------------------------------------
@@ -64,12 +61,9 @@ LOG_WEBHOOK_URL = os.environ.get('LOG_WEBHOOK_URL', '').strip()
 
 
 def get_master_path(style):
-    if style not in KNOWN_STYLES:
-        raise FileNotFoundError(f"Unknown style '{style}'.")
-    path = os.path.join(RISER_STL_DIR, f'{style.capitalize()}.stl')
+    path = os.path.join(RISER_STL_DIR, f'{style}.stl')
     if not os.path.isfile(path):
-        raise FileNotFoundError(
-            f"Master STL for style '{style}' is missing. Expected: {path}")
+        raise FileNotFoundError(f"Master STL not found: '{style}.stl'")
     return path
 
 
@@ -150,6 +144,19 @@ def api_pivot_cup_generate():
 
 
 # -- Riser pad API ------------------------------------------------------------
+
+@app.route('/api/riser-pad/library', methods=['GET'])
+def api_riser_pad_library():
+    """Return a sorted list of library style names (all STLs except the 3 defaults)."""
+    names = []
+    if os.path.isdir(RISER_STL_DIR):
+        for fname in sorted(os.listdir(RISER_STL_DIR)):
+            if fname.endswith('.stl'):
+                name = fname[:-4]
+                if name not in DEFAULT_STL_NAMES:
+                    names.append(name)
+    return jsonify(names)
+
 
 @app.route('/api/riser-pad/slice', methods=['POST'])
 def api_riser_pad_slice():

@@ -8,15 +8,16 @@ for /d /r %%i in (__pycache__) do @if exist "%%i" rd /s /q "%%i"
 
 echo.
 echo  Longboard Technology — local dev server
-echo  Open http://localhost:5000 in your browser
+echo  Flask:  http://localhost:5000
+echo  tunnel: check the cloudflared window for your public URL
 echo  (tip: Ctrl-F5 to hard-refresh if you don't see your latest changes)
-echo  Press Ctrl-C in this window to stop.
 echo.
 
-REM -B prevents Python from writing new .pyc files this session — keeps the
-REM source-of-truth in the .py files and avoids the cache problem above.
-python -B site_app.py
+REM Start Flask in its own window
+start "Flask" cmd /k "python -B site_app.py"
 
-echo.
-echo  Server stopped.
-pause
+REM Give Flask a moment to bind before opening the tunnel
+timeout /t 2 /nobreak >nul
+
+REM Start cloudflared tunnel in its own window
+start "cloudflared" cmd /k "cloudflared tunnel --url localhost:5000"
