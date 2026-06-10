@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
 """
 Glossary Reader — The Ultimate Longboard Wiki Project
-Public-facing Flask app serving canonical glossary terms.
-Read-only — never writes to the DB.
+Public-facing Flask app serving glossary terms. Read-only — never writes to the DB.
+
+v2: glossary-first landing (alphabetical, esoteric-1 default), Advanced /
+Third-eye toggles, tag-hierarchy filtering, mode-aware prev/next, search nudge.
+Design spec: Design Documents/GLOSSARY_APP.md (single source of truth).
 
 Usage:
     pip install flask
-    python glossary_app.py [--db <path>] [--port 5001] [--debug]
+    python glossary_app.py [--db <path>] [--port 5001] [--debug] [--canonical-only]
+
+    --canonical-only   hide candidate terms (launch state).
+                       Default INCLUDES candidates rendered as canonical
+                       (design-phase preview at full scale).
+                       Env override: GLOSSARY_CANONICAL_ONLY=1
 
 Browse at:  http://localhost:5001
 Deployment: glossary.longboardtechnology.com
 """
 
 import argparse
+import json
 import os
 import re
 import sqlite3
@@ -22,24 +31,68 @@ from flask import Flask, g, redirect, render_template_string, request, url_for
 app = Flask(__name__)
 app.secret_key = 'lt-glossary-reader-2026'
 DB_PATH: str = ''
+INCLUDE_CANDIDATES: bool = True   # design-phase default ON; --canonical-only / env flips
+
+
+# ── Tier config ───────────────────────────────────────────────────────────────
+# One constant feeds the server queries AND the client toggle logic.
+# Retuning thresholds later is a one-line edit.
+
+TIERS = {
+    'default':   [1],          # always visible
+    'advanced':  [2, 3, 4],    # + Advanced toggle
+    'third_eye': [5],          # + Third-eye Open (requires Advanced)
+}
+
+
+# ── Category tag hierarchy ────────────────────────────────────────────────────
+# Display-layer only (DB is untouched). Atomic tags come from comma-splitting
+# the DB's compound category strings. Parents filter to themselves plus all
+# descendants. Tags found in the DB but missing here fall back to top-level
+# with a startup warning. Red-penned 2026-06-07; Trucks←Parts←Hardware nest
+# is provisional pending preview validation.
+
+CATEGORY_TREE = {
+    'Trucks':      {'Bushings': {}, 'Parts': {'Hardware': {}}},
+    'Geometry':    {},
+    'Wheels':      {'Bearings': {}},
+    'Decks':       {'Deck Profile': {}, 'Deck Shape': {}, 'Deck Shapes': {},
+                    'Deck Setup': {}},
+    'Materials':   {},
+    'Technique':   {'Techniques': {}, 'Riding technique': {}, 'How to Ride': {},
+                    'How-to-Ride': {}},
+    'Disciplines': {'DH': {}, 'LDP': {}, 'Freeride': {}, 'Slalom': {},
+                    'Freestyle': {}, 'Racing': {}, 'Dancing': {}},
+    'Esk8':        {'Motor': {}, 'Battery': {}, 'Drive Train': {},
+                    'Motor Control': {}, 'Software': {}, 'DC Electrical': {},
+                    'Electric Longboard': {}},
+    'Safety':      {'FAR': {}, 'Equipment': {}, 'First Aid': {}, 'Helmets': {},
+                    'Helmet standards': {}, 'Protective gear': {}},
+    'Physics':     {},
+    'History':     {'Vendor': {}, 'Brands': {}, 'Organizations': {}},
+    'Cultural':    {},
+    'People':      {},
+    'DIY':         {'Board Building': {}, 'Maintenance': {}},
+    'Setup':       {},
+    'Events':      {'Venues': {}},
+    'General':     {},
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def slugify(s: str) -> str:
-    """Convert any string to a URL-safe slug."""
     s = s.lower()
     s = re.sub(r'[^a-z0-9]+', '-', s)
     return s.strip('-')
 
 
-def cat_display(cat: str) -> str:
-    """'Esk8, Motor'  →  'Esk8 › Motor'"""
-    return ' › '.join(p.strip() for p in cat.split(','))
+def split_tags(cat) -> list:
+    """'Geometry, Trucks' → ['Geometry', 'Trucks'] (atomic tags)."""
+    return [t.strip() for t in (cat or '').split(',') if t.strip()]
 
 
 def first_sentence(text: str, max_len: int = 150) -> str:
-    """First sentence of a definition, for card previews."""
     if not text:
         return ''
     m = re.match(r'(.+?[.!?])(?:\s|$)', text)
@@ -48,11 +101,116 @@ def first_sentence(text: str, max_len: int = 150) -> str:
     return text[:max_len].rstrip() + ('…' if len(text) > max_len else '')
 
 
+# Flattened tag model: NODES[slug] = {name, children[slugs], subtree[slugs incl self]}
+NODES: dict = {}
+TOP: list = []           # top-level slugs, tree order; unmapped appended at startup
+
+
+def _subtree_slugs(name, sub) -> list:
+    out = [slugify(name)]
+    for c, s in sub.items():
+        out += _subtree_slugs(c, s)
+    return out
+
+
+def _walk_tree(name, sub):
+    NODES[slugify(name)] = {
+        'name': name,
+        'children': [slugify(c) for c in sub],
+        'subtree': _subtree_slugs(name, sub),
+    }
+    for c, s in sub.items():
+        _walk_tree(c, s)
+
+
+for _p, _s in CATEGORY_TREE.items():
+    _walk_tree(_p, _s)
+    TOP.append(slugify(_p))
+
+
+def register_unmapped_tags(db_path: str):
+    """Tags in the DB but absent from CATEGORY_TREE become top-level chips.
+    Startup warning keeps drift visible, never silent."""
+    con = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+    tags = {}
+    for (cat,) in con.execute(
+            f"SELECT category FROM terms WHERE {visible_where()} "
+            "AND category IS NOT NULL"):
+        for t in split_tags(cat):
+            tags.setdefault(slugify(t), t)
+    con.close()
+    unmapped = sorted((s, n) for s, n in tags.items() if s not in NODES)
+    for s, n in unmapped:
+        NODES[s] = {'name': n, 'children': [], 'subtree': [s]}
+        TOP.append(s)
+    if unmapped:
+        print(f'WARNING: {len(unmapped)} tag(s) not in CATEGORY_TREE '
+              f'(shown top-level): {", ".join(n for _, n in unmapped)}')
+
+
+# ── Mode handling ─────────────────────────────────────────────────────────────
+
+def mode_args():
+    """Read mode context from the query string. eye requires adv."""
+    adv = request.args.get('adv') == '1'
+    eye = adv and request.args.get('eye') == '1'
+    cat = request.args.get('cat', '').strip()
+    if cat and cat not in NODES:
+        cat = ''
+    return adv, eye, cat
+
+
+def mode_tiers(adv: bool, eye: bool) -> list:
+    tiers = list(TIERS['default'])
+    if adv:
+        tiers += TIERS['advanced']
+        if eye:
+            tiers += TIERS['third_eye']
+    return tiers
+
+
+def mode_params(adv, eye, cat=''):
+    """Query-param dict for propagating mode context through links."""
+    p = {}
+    if adv:
+        p['adv'] = 1
+        if eye:
+            p['eye'] = 1
+    if cat:
+        p['cat'] = cat
+    return p
+
+
+def term_tier(t) -> int:
+    """Missing rating → advanced bucket (never leaks into the default view)."""
+    return t['esoteric_rating'] if t['esoteric_rating'] else max(TIERS['advanced'])
+
+
+def term_matches(t, tiers, cat) -> bool:
+    if term_tier(t) not in tiers:
+        return False
+    if cat:
+        allowed = set(NODES[cat]['subtree'])
+        if not any(slugify(x) in allowed for x in split_tags(t['category'])):
+            return False
+    return True
+
+
 # ── Database ──────────────────────────────────────────────────────────────────
+
+def visible_where() -> str:
+    """Status clause. Candidates (with rating + definition) render as canonical
+    while INCLUDE_CANDIDATES is on — design-phase preview at full scale."""
+    if INCLUDE_CANDIDATES:
+        return ("((status='canonical') OR (status='candidate' "
+                "AND esoteric_rating IS NOT NULL "
+                "AND definition IS NOT NULL AND definition!=''))")
+    return "status='canonical'"
+
 
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(DB_PATH)
+        g.db = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True)
         g.db.row_factory = sqlite3.Row
     return g.db
 
@@ -64,112 +222,59 @@ def close_db(_=None):
         db.close()
 
 
-def get_categories_grouped(db: sqlite3.Connection) -> dict:
-    """
-    Returns dict: { parent_key: [(cat_name, count, slug), ...] }
-    Groups hierarchical category names ('Esk8, Motor') under their
-    first segment ('Esk8'). Sorted alphabetically at both levels.
-    """
-    rows = db.execute(
-        "SELECT category, COUNT(*) AS n FROM terms "
-        "WHERE status='canonical' AND category IS NOT NULL AND TRIM(category) != '' "
-        "GROUP BY category ORDER BY category"
+def all_visible_terms(db) -> list:
+    return db.execute(
+        f"SELECT * FROM terms WHERE {visible_where()} "
+        "ORDER BY term COLLATE NOCASE"
     ).fetchall()
 
-    groups: dict = {}
-    for r in rows:
-        cat = r['category']
-        parent = cat.split(',')[0].strip()
-        groups.setdefault(parent, []).append((cat, r['n'], slugify(cat)))
 
-    return dict(sorted(groups.items()))
-
-
-def get_category_terms(db: sqlite3.Connection, cat_slug: str):
-    """Return (category_name, [term_dicts]) for a slug, or (None, []) if not found."""
-    rows = db.execute(
-        "SELECT * FROM terms "
-        "WHERE status='canonical' AND category IS NOT NULL "
-        "ORDER BY term"
-    ).fetchall()
-    matched_cat = None
-    terms = []
-    for t in rows:
-        if t['category'] and slugify(t['category']) == cat_slug:
-            matched_cat = t['category']
-            terms.append(dict(t))
-    return matched_cat, terms
-
-
-def resolve_slug(db: sqlite3.Connection, slug: str):
-    """
-    Resolve a URL slug to a canonical term.
-    Resolution order:
-      1. Direct slug match on term name
-      2. Slug match on an also_called alias → 301 to canonical slug
-      3. Slug match on a redirects.synonym → 301 to canonical slug
-    Returns (term_dict, redirect_slug|None), or (None, None) if unresolved.
-    """
-    terms = db.execute("SELECT * FROM terms WHERE status='canonical'").fetchall()
-
-    # 1. Direct term slug
+def resolve_slug(db, slug: str):
+    """slug → (term_dict, redirect_slug|None) | (None, None).
+    Order: term name → also_called alias → redirects table."""
+    terms = db.execute(f"SELECT * FROM terms WHERE {visible_where()}").fetchall()
     for t in terms:
         if slugify(t['term']) == slug:
             return dict(t), None
-
-    # 2. also_called alias → redirect
     for t in terms:
         if t['also_called']:
             for alias in (a.strip() for a in t['also_called'].split(',') if a.strip()):
                 if slugify(alias) == slug:
                     return dict(t), slugify(t['term'])
-
-    # 3. Redirects table → redirect
     for r in db.execute("SELECT synonym, canonical_term FROM redirects").fetchall():
         if slugify(r['synonym']) == slug:
             target = db.execute(
-                "SELECT * FROM terms WHERE term=? COLLATE NOCASE AND status='canonical'",
-                (r['canonical_term'],)
-            ).fetchone()
+                f"SELECT * FROM terms WHERE term=? COLLATE NOCASE AND {visible_where()}",
+                (r['canonical_term'],)).fetchone()
             if target:
                 return dict(target), slugify(target['term'])
-
     return None, None
 
 
-def get_adjacent(db: sqlite3.Connection, term_id: int):
-    """Return (prev_term_dict|None, next_term_dict|None) in alphabetical order."""
-    ids = [r['id'] for r in db.execute(
-        "SELECT id FROM terms WHERE status='canonical' ORDER BY term"
-    ).fetchall()]
+def get_adjacent(db, term_id: int, adv, eye, cat):
+    """Mode-aware prev/next: adjacency within the VISIBLE set (tiers + filter),
+    alphabetical — 'next' never lands on an invisible term."""
+    tiers = mode_tiers(adv, eye)
+    rows = all_visible_terms(db)
+    visible = [r for r in rows if term_matches(r, tiers, cat) or r['id'] == term_id]
+    ids = [r['id'] for r in visible]
     try:
         idx = ids.index(term_id)
     except ValueError:
         return None, None
-
-    def fetch(tid):
-        row = db.execute("SELECT id, term FROM terms WHERE id=?", (tid,)).fetchone()
-        return dict(row) if row else None
-
-    prev = fetch(ids[idx - 1]) if idx > 0 else None
-    nxt  = fetch(ids[idx + 1]) if idx < len(ids) - 1 else None
+    prev = dict(visible[idx - 1]) if idx > 0 else None
+    nxt = dict(visible[idx + 1]) if idx < len(ids) - 1 else None
     return prev, nxt
 
 
-def search_terms(db: sqlite3.Connection, q: str) -> list:
-    """
-    Search canonical term names and also_called aliases.
-    Ranked: exact match > prefix > substring.
-    """
+def search_terms(db, q: str) -> list:
+    """Search across EVERYTHING visible_where allows (all tiers);
+    the route partitions results by mode. exact > prefix > substring."""
     q_l = q.lower().strip()
     if not q_l:
         return []
-    terms = db.execute(
-        "SELECT * FROM terms WHERE status='canonical' ORDER BY term"
-    ).fetchall()
-
     exact, prefix, sub = [], [], []
-    for t in terms:
+    for t in all_visible_terms(db):
         names = [t['term'].lower()]
         if t['also_called']:
             names += [a.strip().lower() for a in t['also_called'].split(',') if a.strip()]
@@ -180,7 +285,6 @@ def search_terms(db: sqlite3.Connection, q: str) -> list:
             prefix.append(td)
         elif any(q_l in n for n in names):
             sub.append(td)
-
     return exact + prefix + sub
 
 
@@ -195,6 +299,7 @@ CSS = """
   --border:#2a3a5c;--text:#e8eaf0;--muted:#8a9cc0;
   --accent:#1ec73d;--accent-bright:#24f048;--accent-dim:#0f7a22;
   --accent-glow:rgba(30,199,61,.12);
+  --eye:#8b5fd6;--eye-bright:#b693e0;--eye-dim:rgba(107,70,193,.18);
   --font-d:'Orbitron',sans-serif;--font-b:'Space Mono',monospace;
 }
 html,body{min-height:100%}
@@ -212,11 +317,6 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
 .nav-brand{font-family:var(--font-d);font-size:.875rem;font-weight:700;
            color:#fff;letter-spacing:.06em;text-decoration:none!important}
 .nav-brand span{color:var(--accent)}
-.nav-links{display:flex;gap:.1rem}
-.nav-links a{color:#8fa8cc;font-size:.775rem;padding:.3rem .7rem;
-             border-radius:4px;transition:background .15s,color .15s}
-.nav-links a:hover,.nav-links a.active{background:rgba(255,255,255,.08);
-  color:#fff;text-decoration:none}
 .nav-search{margin-left:auto;display:flex}
 .nav-search input{background:var(--surface2);border:1px solid var(--border);
   border-right:none;border-radius:4px 0 0 4px;color:var(--text);
@@ -231,50 +331,93 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
 /* ── Layout ── */
 .wrap{max-width:900px;margin:0 auto;padding:2rem 1.5rem}
 
-/* ── Breadcrumb ── */
+/* ── Page title + mode controls ── */
+.pt{display:flex;align-items:flex-end;justify-content:space-between;
+    flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem}
+.pt h1{font-family:var(--font-d);font-size:1.35rem;font-weight:700;
+       letter-spacing:.03em;margin-bottom:.25rem}
+.pt .sub{font-size:.8rem;color:var(--muted)}
+.modes{display:flex;gap:.5rem;align-items:center}
+.mode-btn{font-family:var(--font-d);font-size:.62rem;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;cursor:pointer;
+  background:transparent;border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);padding:.45rem .8rem;transition:color .15s,border-color .15s,background .15s}
+.mode-btn:hover{color:var(--accent);border-color:var(--accent-dim)}
+.mode-btn.on{color:var(--accent);border-color:var(--accent);
+  background:var(--accent-glow)}
+.mode-btn.eye{display:none}
+.mode-btn.eye.avail{display:inline-block}
+.mode-btn.eye:hover{color:var(--eye-bright);border-color:var(--eye)}
+.mode-btn.eye.on{color:var(--eye-bright);border-color:var(--eye);
+  background:var(--eye-dim)}
+
+/* ── Search box (landing) ── */
+.search-box{background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:1rem 1.25rem;display:flex;gap:.5rem;margin-bottom:1.25rem}
+.search-box input{flex:1;background:var(--surface2);border:1px solid var(--border);
+  border-radius:4px;color:var(--text);font-family:var(--font-b);
+  font-size:.875rem;padding:.45rem .75rem;outline:none}
+.search-box input:focus{border-color:var(--accent-dim)}
+.search-box button{background:var(--accent-dim);border:none;border-radius:4px;
+  color:#fff;cursor:pointer;font-family:var(--font-b);font-size:.8rem;
+  padding:.45rem 1.1rem;transition:background .15s}
+.search-box button:hover{background:var(--accent)}
+
+/* ── Filter bar (advanced only) ── */
+.filterbar{display:none;margin-bottom:1.25rem;border:1px solid var(--border);
+  border-radius:8px;background:var(--surface);padding:.85rem 1rem;
+  opacity:0;transform:translateY(-4px);transition:opacity .15s,transform .15s}
+.filterbar.show{display:block}
+.filterbar.in{opacity:1;transform:none}
+.fb-lbl{font-family:var(--font-d);font-size:.6rem;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.fb-row{display:flex;flex-wrap:wrap;gap:.35rem}
+.fb-row+.fb-row{margin-top:.5rem;padding-top:.5rem;border-top:1px dashed var(--border)}
+.chip{font-size:.72rem;cursor:pointer;background:var(--surface2);
+  border:1px solid var(--border);border-radius:12px;color:var(--muted);
+  padding:.18rem .7rem;transition:color .15s,border-color .15s,background .15s}
+.chip:hover{color:var(--accent);border-color:var(--accent-dim)}
+.chip.on{color:#04130a;background:var(--accent);border-color:var(--accent);font-weight:700}
+.chip .n{opacity:.7;font-size:.65rem;margin-left:.3rem}
+.chip.on .n{opacity:.85}
+
+/* ── Term list ── */
+.term-list{display:flex;flex-direction:column;gap:.4rem}
+.entry{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:.85rem 1.1rem;transition:background .15s,border-color .15s}
+.entry:hover{background:var(--surface2);border-color:var(--accent-dim)}
+.entry.t5{border-left:2px solid var(--eye)}
+.entry-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
+.entry-name{font-family:var(--font-d);font-size:.85rem;font-weight:600;
+         color:var(--accent)}
+.entry-name:hover{color:var(--accent-bright)}
+.entry-tags{display:flex;flex-wrap:wrap;gap:.25rem;margin-left:auto}
+.tag{font-size:.62rem;padding:1px 8px;border-radius:9px;
+  border:1px solid var(--border);color:var(--muted);background:transparent;
+  pointer-events:none}
+body.adv .tag{pointer-events:auto;cursor:pointer;transition:color .15s,border-color .15s}
+body.adv .tag:hover{color:var(--accent);border-color:var(--accent-dim)}
+.entry-def{color:var(--muted);font-size:.8rem;line-height:1.55;margin-top:.3rem}
+.entry-def .full{display:none}
+.entry.open .entry-def .short{display:none}
+.entry.open .entry-def .full{display:inline}
+.more{color:var(--accent);cursor:pointer;font-size:.72rem;margin-left:.3rem;
+  user-select:none}
+.more:hover{color:var(--accent-bright)}
+
+/* ── Term detail ── */
 .bc{font-size:.775rem;color:var(--muted);margin-bottom:1.25rem;
     display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
 .bc a{color:var(--muted)}.bc a:hover{color:var(--accent)}
 .bc .sep{opacity:.4}
-
-/* ── Page title ── */
-.pt h1{font-family:var(--font-d);font-size:1.35rem;font-weight:700;
-       letter-spacing:.03em;margin-bottom:.25rem}
-.pt .sub{font-size:.8rem;color:var(--muted);margin-bottom:1.5rem}
-
-/* ── Category index ── */
-.cat-section{margin-bottom:2rem}
-.cat-section-hdr{font-family:var(--font-d);font-size:.7rem;font-weight:700;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
-  border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-bottom:.75rem}
-.cat-grid{display:flex;flex-wrap:wrap;gap:.4rem}
-.cat-chip{display:inline-flex;align-items:center;gap:.45rem;
-  background:var(--surface);border:1px solid var(--border);border-radius:6px;
-  padding:.4rem .85rem;color:var(--text);text-decoration:none!important;
-  font-size:.8rem;transition:background .15s,border-color .15s}
-.cat-chip:hover{background:var(--surface2);border-color:var(--accent-dim);color:#fff}
-.cat-chip .n{color:var(--accent);font-size:.7rem;font-weight:700}
-.cat-chip.parent{font-family:var(--font-d);font-size:.72rem}
-
-/* ── Term list cards ── */
-.term-list{display:flex;flex-direction:column;gap:.4rem}
-.tc{background:var(--surface);border:1px solid var(--border);border-radius:8px;
-    padding:.85rem 1.1rem;display:block;color:inherit;
-    text-decoration:none!important;transition:background .15s,border-color .15s}
-.tc:hover{background:var(--surface2);border-color:var(--accent-dim)}
-.tc-name{font-family:var(--font-d);font-size:.85rem;font-weight:600;
-         color:var(--accent);margin-bottom:.3rem}
-.tc:hover .tc-name{color:var(--accent-bright)}
-.tc-def{color:var(--muted);font-size:.8rem;line-height:1.55}
-
-/* ── Term detail ── */
 .term-heading{font-family:var(--font-d);font-size:1.5rem;font-weight:700;
   letter-spacing:.03em;color:#fff;margin-bottom:.75rem;line-height:1.3}
 .term-meta{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin-bottom:1.5rem}
 .meta-tag{font-size:.7rem;padding:2px 9px;border-radius:10px;display:inline-block}
 .meta-cat{background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
 .meta-cat a{color:var(--muted)}.meta-cat a:hover{color:var(--accent);text-decoration:none}
-.meta-adv{background:rgba(107,70,193,.15);border:1px solid rgba(107,70,193,.4);color:#b693e0}
+.meta-eso{background:transparent;border:1px dashed var(--border);color:var(--muted)}
+.meta-adv{background:var(--eye-dim);border:1px solid var(--eye);color:var(--eye-bright)}
 .term-def{font-size:.9375rem;line-height:1.85;color:var(--text);
   background:var(--surface);border:1px solid var(--border);
   border-radius:8px;padding:1.25rem 1.5rem;margin-bottom:1.25rem}
@@ -285,7 +428,7 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
 .alias-chip{background:var(--surface2);border:1px solid var(--border);
   border-radius:12px;padding:2px 10px;font-size:.8rem;color:var(--muted)}
 
-/* ── Prev/Next nav ── */
+/* ── Prev/Next ── */
 .term-nav{display:flex;justify-content:space-between;align-items:center;
   margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border);gap:.75rem}
 .tn-btn{color:var(--muted);font-size:.78rem;display:flex;align-items:center;
@@ -296,18 +439,12 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
 .tn-term{font-family:var(--font-d);font-size:.68rem;color:var(--text);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* ── Search ── */
-.search-box{background:var(--surface);border:1px solid var(--border);
-  border-radius:8px;padding:1rem 1.25rem;display:flex;gap:.5rem;margin-bottom:1.5rem}
-.search-box input{flex:1;background:var(--surface2);border:1px solid var(--border);
-  border-radius:4px;color:var(--text);font-family:var(--font-b);
-  font-size:.875rem;padding:.45rem .75rem;outline:none}
-.search-box input:focus{border-color:var(--accent-dim)}
-.search-box button{background:var(--accent-dim);border:none;border-radius:4px;
-  color:#fff;cursor:pointer;font-family:var(--font-b);font-size:.8rem;
-  padding:.45rem 1.1rem;transition:background .15s}
-.search-box button:hover{background:var(--accent)}
+/* ── Search page ── */
 .result-count{font-size:.8rem;color:var(--muted);margin-bottom:.75rem}
+.nudge{margin-top:1rem;padding:.7rem 1rem;border:1px dashed var(--border);
+  border-radius:8px;font-size:.8rem;color:var(--muted)}
+.nudge a{font-family:var(--font-d);font-size:.66rem;letter-spacing:.1em;
+  text-transform:uppercase}
 
 /* ── Empty state ── */
 .empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
@@ -317,6 +454,7 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
   .wrap{padding:1.25rem 1rem}
   .nav-search{display:none}
   .term-heading{font-size:1.15rem}
+  .entry-tags{margin-left:0;width:100%}
 }
 """
 
@@ -342,6 +480,178 @@ STARFIELD_JS = """
 })();
 """
 
+# Client-side mode/filter logic for the landing page.
+GLOSSARY_JS = r"""
+(function(){
+  var TIERS = window.GLOSSARY_TIERS, NODES = window.GLOSSARY_NODES, TOP = window.GLOSSARY_TOP;
+  var state = {adv:false, eye:false, cat:''};
+
+  // restore from URL
+  var sp = new URLSearchParams(location.search);
+  state.adv = sp.get('adv') === '1';
+  state.eye = state.adv && sp.get('eye') === '1';
+  var cat0 = sp.get('cat') || '';
+  if (cat0 && NODES[cat0]) state.cat = cat0;
+
+  var entries = [].slice.call(document.querySelectorAll('.entry'));
+  var data = entries.map(function(el){
+    return {el:el, tier:+el.dataset.tier,
+            tags:(el.dataset.tags||'').split(' ').filter(Boolean)};
+  });
+
+  function visibleTiers(){
+    var t = TIERS.default.slice();
+    if (state.adv){ t = t.concat(TIERS.advanced);
+      if (state.eye) t = t.concat(TIERS.third_eye); }
+    return t;
+  }
+  function inSubtree(tags, cat){
+    if (!cat) return true;
+    var sub = NODES[cat].subtree;
+    return tags.some(function(tg){ return sub.indexOf(tg) >= 0; });
+  }
+
+  var btnAdv = document.getElementById('btn-adv'),
+      btnEye = document.getElementById('btn-eye'),
+      fbar   = document.getElementById('filterbar'),
+      fbTop  = document.getElementById('fb-top'),
+      fbSub  = document.getElementById('fb-sub'),
+      countEl= document.getElementById('term-count');
+
+  function chipHtml(slug, n, on){
+    var node = NODES[slug];
+    return '<button class="chip'+(on?' on':'')+'" data-cat="'+slug+'">'
+         + node.name + '<span class="n">' + n + '</span></button>';
+  }
+
+  function counts(tiers){
+    var m = {};
+    data.forEach(function(d){
+      if (tiers.indexOf(d.tier) < 0) return;
+      var seen = {};
+      d.tags.forEach(function(tg){
+        for (var slug in NODES){
+          if (!seen[slug] && NODES[slug].subtree.indexOf(tg) >= 0){
+            seen[slug] = true; m[slug] = (m[slug]||0)+1;
+          }
+        }
+      });
+    });
+    return m;
+  }
+
+  function renderChips(){
+    var tiers = visibleTiers(), n = counts(tiers), html = '';
+    TOP.forEach(function(slug){
+      if (!n[slug]) return;
+      var on = state.cat === slug ||
+               (state.cat && NODES[slug].subtree.indexOf(state.cat) >= 0);
+      html += chipHtml(slug, n[slug], on);
+    });
+    fbTop.innerHTML = html;
+    // sub-row: children of the active node (drill-in)
+    var subHtml = '';
+    if (state.cat){
+      var kids = NODES[state.cat].children;
+      kids.forEach(function(k){ if (n[k]) subHtml += chipHtml(k, n[k], false); });
+      if (subHtml) subHtml = '<span class="fb-lbl" style="margin:0 .4rem 0 0">'
+        + NODES[state.cat].name + ' ›</span>' + subHtml;
+    }
+    fbSub.innerHTML = subHtml;
+    fbSub.style.display = subHtml ? 'flex' : 'none';
+  }
+
+  function anchorEntry(){
+    // If the mode controls are still in view the user is at the top of the
+    // list: keep the page where it is — anchoring from here shoves the
+    // viewport down past the new alphabetically-earlier entries.
+    var hdr = document.querySelector('.pt');
+    if (hdr && hdr.getBoundingClientRect().bottom > 0) return null;
+    for (var i = 0; i < data.length; i++){
+      var r = data[i].el.getBoundingClientRect();
+      if (r.bottom > 60 && data[i].el.style.display !== 'none')
+        return {el:data[i].el, top:r.top};
+    }
+    return null;
+  }
+
+  function apply(keepAnchor){
+    var a = keepAnchor ? anchorEntry() : null;
+    var tiers = visibleTiers(), shown = 0;
+    data.forEach(function(d){
+      var ok = tiers.indexOf(d.tier) >= 0 && inSubtree(d.tags, state.cat);
+      d.el.style.display = ok ? '' : 'none';
+      if (ok) shown++;
+    });
+    countEl.textContent = shown;
+    document.body.classList.toggle('adv', state.adv);
+    btnAdv.classList.toggle('on', state.adv);
+    btnEye.classList.toggle('avail', state.adv);
+    btnEye.classList.toggle('on', state.eye);
+    fbar.classList.toggle('show', state.adv);
+    requestAnimationFrame(function(){ fbar.classList.toggle('in', state.adv); });
+    renderChips();
+    syncUrl();
+    if (a){
+      var r = a.el.getBoundingClientRect();
+      window.scrollBy(0, r.top - a.top);
+    }
+  }
+
+  function params(){
+    var p = new URLSearchParams();
+    if (state.adv) p.set('adv','1');
+    if (state.eye) p.set('eye','1');
+    if (state.cat) p.set('cat',state.cat);
+    var s = p.toString();
+    return s ? '?'+s : '';
+  }
+  function syncUrl(){
+    history.replaceState(null,'',location.pathname + params());
+    // carry mode context into permalinks + search form
+    var f = document.getElementById('search-form');
+    if (f){
+      f.querySelector('[name=adv]').value = state.adv ? '1' : '';
+      f.querySelector('[name=eye]').value = state.eye ? '1' : '';
+    }
+  }
+
+  btnAdv.addEventListener('click', function(){
+    state.adv = !state.adv;
+    if (!state.adv){ state.eye = false; state.cat = ''; }
+    apply(true);
+  });
+  btnEye.addEventListener('click', function(){
+    state.eye = !state.eye; apply(true);
+  });
+  fbar.addEventListener('click', function(e){
+    var c = e.target.closest('.chip');
+    if (!c) return;
+    var slug = c.dataset.cat;
+    state.cat = (state.cat === slug) ? '' : slug;
+    apply(false);
+  });
+  document.querySelector('.term-list').addEventListener('click', function(e){
+    var more = e.target.closest('.more');
+    if (more){
+      more.closest('.entry').classList.toggle('open');
+      more.textContent = more.closest('.entry').classList.contains('open') ? 'less' : 'more';
+      return;
+    }
+    var tag = e.target.closest('.tag');
+    if (tag && state.adv){
+      state.cat = (state.cat === tag.dataset.cat) ? '' : tag.dataset.cat;
+      apply(false);
+      return;
+    }
+    var link = e.target.closest('a.entry-name');
+    if (link) link.href = link.pathname + params();
+  });
+
+  apply(false);
+})();
+"""
+
 
 # ── Template ──────────────────────────────────────────────────────────────────
 
@@ -354,90 +664,84 @@ TMPL = r"""<!DOCTYPE html>
 {% if meta_desc %}
 <meta name="description" content="{{ meta_desc }}">
 {% endif %}
-<style>{{ css }}</style>
+<style>{{ css|safe }}</style>
 </head>
 <body>
 
 <nav class="nav">
   <canvas id="sf"></canvas>
-  <a class="nav-brand" href="{{ url_for('categories') }}">Longboard <span>Glossary</span></a>
-  <div class="nav-links">
-    <a href="{{ url_for('categories') }}"{% if view=='categories' %} class="active"{% endif %}>Browse</a>
-  </div>
+  <a class="nav-brand" href="{{ url_for('index') }}">Longboard <span>Glossary</span></a>
   <form class="nav-search" method="get" action="{{ url_for('search') }}">
     <input type="search" name="q" placeholder="Search terms…" value="{{ nav_q or '' }}" autocomplete="off">
+    {% if adv %}<input type="hidden" name="adv" value="1">{% endif %}
+    {% if eye %}<input type="hidden" name="eye" value="1">{% endif %}
     <button type="submit">→</button>
   </form>
 </nav>
 
 <div class="wrap">
 
-{# ═══════════════════ CATEGORIES INDEX ═══════════════════ #}
-{% if view == 'categories' %}
+{# ═══════════════════ GLOSSARY (LANDING) ═════════════════ #}
+{% if view == 'index' %}
 
 <div class="pt">
-  <h1>Longboard Glossary</h1>
-  <div class="sub">{{ total_terms }} canonical terms across {{ total_cats }} categories</div>
-</div>
-
-{% for parent, entries in groups.items() %}
-<div class="cat-section">
-  <div class="cat-section-hdr">{{ parent }}</div>
-  <div class="cat-grid">
-    {% for cat_name, count, slug in entries %}
-    <a class="cat-chip{% if cat_name == parent %} parent{% endif %}"
-       href="{{ url_for('category', cat_slug=slug) }}">
-      {{ cat_display(cat_name) }}<span class="n">{{ count }}</span>
-    </a>
-    {% endfor %}
+  <div>
+    <h1>Longboard Glossary</h1>
+    <div class="sub"><span id="term-count">…</span> terms, A→Z</div>
+  </div>
+  <div class="modes">
+    <button class="mode-btn" id="btn-adv" type="button">Advanced</button>
+    <button class="mode-btn eye" id="btn-eye" type="button">Third-eye Open</button>
   </div>
 </div>
-{% endfor %}
 
-{% if not groups %}
-<div class="empty"><div class="icon">📖</div><p>No terms yet.</p></div>
-{% endif %}
-
-
-{# ═══════════════════ CATEGORY PAGE ══════════════════════ #}
-{% elif view == 'category' %}
-
-<div class="bc">
-  <a href="{{ url_for('categories') }}">Browse</a>
-  <span class="sep">›</span>
-  <span>{{ cat_display(cat_name) }}</span>
+<div class="search-box">
+  <form method="get" action="{{ url_for('search') }}" style="display:contents" id="search-form">
+    <input type="search" name="q" placeholder="Search the glossary…" autocomplete="off">
+    <input type="hidden" name="adv" value=""><input type="hidden" name="eye" value="">
+    <button type="submit">Search</button>
+  </form>
 </div>
 
-<div class="pt">
-  <h1>{{ cat_display(cat_name) }}</h1>
-  <div class="sub">{{ terms|length }} term{{ 's' if terms|length != 1 }}</div>
+<div class="filterbar" id="filterbar">
+  <div class="fb-lbl">Filter by category</div>
+  <div class="fb-row" id="fb-top"></div>
+  <div class="fb-row" id="fb-sub" style="display:none"></div>
 </div>
 
-{% if terms %}
 <div class="term-list">
-{% for t in terms %}
-<a class="tc" href="{{ url_for('term_page', slug=slugify(t.term)) }}">
-  <div class="tc-name">{{ t.term }}</div>
-  {% if t.definition %}
-  <div class="tc-def">{{ first_sentence(t.definition) }}</div>
+{% for e in entries %}
+<div class="entry{% if e.tier == 5 %} t5{% endif %}" data-tier="{{ e.tier }}" data-tags="{{ e.tag_slugs|join(' ') }}">
+  <div class="entry-head">
+    <a class="entry-name" href="{{ url_for('term_page', slug=e.slug) }}">{{ e.term }}</a>
+    <span class="entry-tags">
+      {% for i in range(e.tags|length) %}
+      <button class="tag" type="button" data-cat="{{ e.tag_slugs[i] }}">{{ e.tags[i] }}</button>
+      {% endfor %}
+    </span>
+  </div>
+  {% if e.def_short %}
+  <div class="entry-def">
+    <span class="short">{{ e.def_short }}</span><span class="full">{{ e.def_full }}</span>
+    {%- if e.def_full != e.def_short %}<span class="more">more</span>{% endif %}
+  </div>
   {% endif %}
-</a>
+</div>
 {% endfor %}
 </div>
-{% else %}
-<div class="empty"><div class="icon">📂</div><p>No terms in this category.</p></div>
-{% endif %}
+
+<script>
+window.GLOSSARY_TIERS = {{ tiers_json|safe }};
+window.GLOSSARY_NODES = {{ nodes_json|safe }};
+window.GLOSSARY_TOP   = {{ top_json|safe }};
+</script>
 
 
 {# ═══════════════════ TERM DETAIL ════════════════════════ #}
 {% elif view == 'term' %}
 
 <div class="bc">
-  <a href="{{ url_for('categories') }}">Browse</a>
-  {% if term.category %}
-  <span class="sep">›</span>
-  <a href="{{ url_for('category', cat_slug=slugify(term.category)) }}">{{ cat_display(term.category) }}</a>
-  {% endif %}
+  <a href="{{ url_for('index', **mode_p) }}">Glossary</a>
   <span class="sep">›</span>
   <span>{{ term.term }}</span>
 </div>
@@ -445,10 +749,13 @@ TMPL = r"""<!DOCTYPE html>
 <div class="term-heading">{{ term.term }}</div>
 
 <div class="term-meta">
-  {% if term.category %}
+  {% for i in range(tags|length) %}
   <span class="meta-tag meta-cat">
-    <a href="{{ url_for('category', cat_slug=slugify(term.category)) }}">{{ cat_display(term.category) }}</a>
+    <a href="{{ url_for('index', adv=1, eye=(1 if eye else None), cat=tag_slugs[i]) }}">{{ tags[i] }}</a>
   </span>
+  {% endfor %}
+  {% if term.esoteric_rating %}
+  <span class="meta-tag meta-eso">esoteric {{ term.esoteric_rating }}/5</span>
   {% endif %}
   {% if term.esoteric_rating and term.esoteric_rating >= 4 %}
   <span class="meta-tag meta-adv">Advanced</span>
@@ -472,13 +779,13 @@ TMPL = r"""<!DOCTYPE html>
 
 <div class="term-nav">
   {% if prev_term %}
-  <a class="tn-btn" href="{{ url_for('term_page', slug=slugify(prev_term.term)) }}">
+  <a class="tn-btn" href="{{ url_for('term_page', slug=slugify(prev_term.term), **mode_p) }}">
     ← <span class="tn-term">{{ prev_term.term }}</span>
   </a>
   {% else %}<span></span>{% endif %}
 
   {% if next_term %}
-  <a class="tn-btn" href="{{ url_for('term_page', slug=slugify(next_term.term)) }}" style="justify-content:flex-end">
+  <a class="tn-btn" href="{{ url_for('term_page', slug=slugify(next_term.term), **mode_p) }}" style="justify-content:flex-end">
     <span class="tn-term">{{ next_term.term }}</span> →
   </a>
   {% else %}<span></span>{% endif %}
@@ -489,7 +796,7 @@ TMPL = r"""<!DOCTYPE html>
 {% elif view == 'search' %}
 
 <div class="bc">
-  <a href="{{ url_for('categories') }}">Browse</a>
+  <a href="{{ url_for('index', **mode_p) }}">Glossary</a>
   <span class="sep">›</span>
   <span>Search</span>
 </div>
@@ -497,6 +804,8 @@ TMPL = r"""<!DOCTYPE html>
 <div class="search-box">
   <form method="get" action="{{ url_for('search') }}" style="display:contents">
     <input type="search" name="q" value="{{ q or '' }}" placeholder="Search terms…" autofocus autocomplete="off">
+    {% if adv %}<input type="hidden" name="adv" value="1">{% endif %}
+    {% if eye %}<input type="hidden" name="eye" value="1">{% endif %}
     <button type="submit">Search</button>
   </form>
 </div>
@@ -506,20 +815,32 @@ TMPL = r"""<!DOCTYPE html>
   <p class="result-count">{{ results|length }} result{{ 's' if results|length != 1 }} for "<strong>{{ q }}</strong>"</p>
   <div class="term-list">
   {% for t in results %}
-  <a class="tc" href="{{ url_for('term_page', slug=slugify(t.term)) }}">
-    <div class="tc-name">{{ t.term }}</div>
+  <div class="entry">
+    <div class="entry-head">
+      <a class="entry-name" href="{{ url_for('term_page', slug=slugify(t.term), **mode_p) }}">{{ t.term }}</a>
+    </div>
     {% if t.definition %}
-    <div class="tc-def">{{ first_sentence(t.definition) }}</div>
+    <div class="entry-def"><span class="short">{{ first_sentence(t.definition) }}</span></div>
     {% endif %}
-  </a>
+  </div>
   {% endfor %}
   </div>
-  {% else %}
+  {% endif %}
+
+  {% if hidden_count %}
+  <div class="nudge">
+    {{ hidden_count }} more result{{ 's' if hidden_count != 1 }} beyond
+    {{ 'Advanced' if adv else 'the default view' }} —
+    <a href="{{ nudge_url }}">show {{ 'them' if hidden_count != 1 else 'it' }}</a>
+  </div>
+  {% endif %}
+
+  {% if not results and not hidden_count %}
   <div class="empty">
     <div class="icon">🔍</div>
     <p>No terms found for "<strong>{{ q }}</strong>".</p>
     <p style="margin-top:.5rem;font-size:.8rem">
-      <a href="{{ url_for('categories') }}">Browse all categories</a>
+      <a href="{{ url_for('index', **mode_p) }}">Back to the glossary</a>
     </p>
   </div>
   {% endif %}
@@ -533,8 +854,8 @@ TMPL = r"""<!DOCTYPE html>
   <div class="icon">🛹</div>
   <p style="font-family:var(--font-d);font-size:.9rem;margin-bottom:.75rem">Term not found</p>
   <p style="font-size:.8rem;color:var(--muted)">
-    <a href="{{ url_for('categories') }}">Browse all categories</a> or
-    <a href="{{ url_for('search') }}">search the glossary</a>.
+    <a href="{{ url_for('index') }}">Back to the glossary</a> or
+    <a href="{{ url_for('search') }}">search</a>.
   </p>
 </div>
 
@@ -542,31 +863,20 @@ TMPL = r"""<!DOCTYPE html>
 
 </div>{# /wrap #}
 
-<script>{{ starfield_js }}</script>
+<script>{{ starfield_js|safe }}</script>
+{% if view == 'index' %}<script>{{ glossary_js|safe }}</script>{% endif %}
 </body>
 </html>"""
 
 
-# ── Template globals ──────────────────────────────────────────────────────────
-
-@app.template_global()
-def slugify_tmpl(s):
-    return slugify(s)
-
-
-# Pass helpers into all template renders via a shared kwargs dict
 def _render(view, page_title, meta_desc='', nav_q='', **kwargs):
+    adv, eye, cat = mode_args()
     return render_template_string(
         TMPL,
-        view=view,
-        page_title=page_title,
-        meta_desc=meta_desc,
-        nav_q=nav_q,
-        css=CSS,
-        starfield_js=STARFIELD_JS,
-        slugify=slugify,
-        cat_display=cat_display,
-        first_sentence=first_sentence,
+        view=view, page_title=page_title, meta_desc=meta_desc, nav_q=nav_q,
+        css=CSS, starfield_js=STARFIELD_JS, glossary_js=GLOSSARY_JS,
+        slugify=slugify, first_sentence=first_sentence,
+        adv=adv, eye=eye, mode_p=mode_params(adv, eye, cat),
         **kwargs,
     )
 
@@ -575,62 +885,71 @@ def _render(view, page_title, meta_desc='', nav_q='', **kwargs):
 
 @app.route('/')
 def index():
-    return redirect(url_for('categories'))
+    """The glossary: alphabetical entries, tier-filtered client-side.
+    Default = esoteric 1; Advanced + Third-eye expand; filter bar at Advanced."""
+    db = get_db()
+    entries = []
+    for t in all_visible_terms(db):
+        tags = split_tags(t['category'])
+        d = t['definition'] or ''
+        short = first_sentence(d)
+        entries.append({
+            'term': t['term'], 'slug': slugify(t['term']),
+            'tier': term_tier(t),
+            'tags': tags, 'tag_slugs': [slugify(x) for x in tags],
+            'def_short': short, 'def_full': d if d != short else short,
+        })
+    return _render(
+        'index', 'Longboard Glossary',
+        meta_desc='The Ultimate Longboard Wiki glossary — longboarding terms, defined.',
+        entries=entries,
+        tiers_json=json.dumps(TIERS),
+        nodes_json=json.dumps(NODES),
+        top_json=json.dumps(TOP),
+    )
 
 
 @app.route('/categories')
 def categories():
-    db = get_db()
-    groups = get_categories_grouped(db)
-    total_terms = db.execute(
-        "SELECT COUNT(*) FROM terms WHERE status='canonical'"
-    ).fetchone()[0]
-    total_cats = db.execute(
-        "SELECT COUNT(DISTINCT category) FROM terms "
-        "WHERE status='canonical' AND category IS NOT NULL AND TRIM(category) != ''"
-    ).fetchone()[0]
-    return _render(
-        'categories', 'Browse',
-        groups=groups,
-        total_terms=total_terms,
-        total_cats=total_cats,
-    )
+    """v1 URL kept alive: the landing page in Advanced mode IS the browse surface."""
+    return redirect(url_for('index', adv=1))
 
 
 @app.route('/category/<cat_slug>')
 def category(cat_slug):
-    db = get_db()
-    cat_name, terms = get_category_terms(db, cat_slug)
-    if cat_name is None:
+    """v1 URL kept alive: a category page is the landing page pre-filtered."""
+    if cat_slug not in NODES:
         return _render('404', 'Category not found'), 404
-    return _render(
-        'category',
-        cat_display(cat_name),
-        meta_desc=f'Longboard glossary terms in the {cat_display(cat_name)} category.',
-        cat_name=cat_name,
-        terms=terms,
-    )
+    return redirect(url_for('index', adv=1, cat=cat_slug))
 
 
 @app.route('/search')
 def search():
     q = request.args.get('q', '').strip()
-    db = get_db()
-
     if not q:
-        return redirect(url_for('categories'))
+        return redirect(url_for('index'))
+    db = get_db()
+    adv, eye, _ = mode_args()
+    tiers = mode_tiers(adv, eye)
 
-    results = search_terms(db, q)
+    hits = search_terms(db, q)
+    results = [t for t in hits if term_tier(t) in tiers]
+    hidden = [t for t in hits if term_tier(t) not in tiers]
 
-    # Top result is an exact term name match → go straight to the term page
+    # exact name match visible in-mode → straight to the term page
     if results and results[0]['term'].lower() == q.lower():
-        return redirect(url_for('term_page', slug=slugify(results[0]['term'])))
+        return redirect(url_for('term_page', slug=slugify(results[0]['term']),
+                                **mode_params(adv, eye)))
+
+    # nudge: enable whatever the hidden matches need
+    nudge_url = ''
+    if hidden:
+        need_eye = eye or any(term_tier(t) in TIERS['third_eye'] for t in hidden)
+        nudge_url = url_for('search', q=q, adv=1, eye=(1 if need_eye else None))
 
     return _render(
-        'search', f'Search: {q}' if q else 'Search',
-        nav_q=q,
-        q=q,
-        results=results,
+        'search', f'Search: {q}', nav_q=q, q=q,
+        results=results, hidden_count=len(hidden), nudge_url=nudge_url,
     )
 
 
@@ -638,45 +957,44 @@ def search():
 def term_page(slug):
     db = get_db()
     term, redirect_slug = resolve_slug(db, slug)
-
     if term is None:
         return _render('404', 'Not found'), 404
 
+    adv, eye, cat = mode_args()
     if redirect_slug and redirect_slug != slug:
-        return redirect(url_for('term_page', slug=redirect_slug), 301)
+        return redirect(url_for('term_page', slug=redirect_slug,
+                                **mode_params(adv, eye, cat)), 301)
 
-    prev_term, next_term = get_adjacent(db, term['id'])
-
-    # Build a clean meta description from the definition
-    defn = term.get('definition') or ''
-    meta = first_sentence(defn, max_len=160)
+    prev_term, next_term = get_adjacent(db, term['id'], adv, eye, cat)
+    tags = split_tags(term['category'])
+    meta = first_sentence(term.get('definition') or '', max_len=160)
 
     return _render(
-        'term', term['term'],
-        meta_desc=meta,
-        nav_q='',
-        term=term,
-        prev_term=prev_term,
-        next_term=next_term,
+        'term', term['term'], meta_desc=meta, nav_q='',
+        term=term, tags=tags, tag_slugs=[slugify(x) for x in tags],
+        prev_term=prev_term, next_term=next_term,
     )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
-    global DB_PATH
-    script_dir  = os.path.dirname(os.path.abspath(__file__))
-    # Default DB path: 3 levels up to Projects/, then into the Wiki project
-    default_db  = os.path.join(
+    global DB_PATH, INCLUDE_CANDIDATES
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    default_db = os.path.join(
         script_dir, '..', '..', '..',
-        'The Ultimate Longboard Wiki Project',
-        'Wiki', 'Glossary', 'glossary.db'
-    )
+        'The Ultimate Longboard Wiki Project', 'Wiki', 'Glossary', 'glossary.db')
+
     p = argparse.ArgumentParser(description='Glossary Reader App')
-    p.add_argument('--db',    default=default_db, help='Path to glossary.db')
-    p.add_argument('--port',  type=int, default=5001)
+    p.add_argument('--db', default=default_db, help='Path to glossary.db')
+    p.add_argument('--port', type=int, default=5001)
     p.add_argument('--debug', action='store_true')
+    p.add_argument('--canonical-only', action='store_true',
+                   help='Hide candidate terms (launch state). Default shows them.')
     args = p.parse_args()
+
+    if args.canonical_only or os.environ.get('GLOSSARY_CANONICAL_ONLY') == '1':
+        INCLUDE_CANDIDATES = False
 
     DB_PATH = os.path.abspath(args.db)
     if not os.path.exists(DB_PATH):
@@ -684,14 +1002,20 @@ def main():
         print('Check the --db path or confirm glossary.db exists.')
         return 1
 
-    # Startup sanity check
     try:
-        conn = sqlite3.connect(DB_PATH)
-        count = conn.execute("SELECT COUNT(*) FROM terms WHERE status='canonical'").fetchone()[0]
+        conn = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True)
+        n_canon = conn.execute(
+            "SELECT COUNT(*) FROM terms WHERE status='canonical'").fetchone()[0]
+        n_vis = conn.execute(
+            f"SELECT COUNT(*) FROM terms WHERE {visible_where()}").fetchone()[0]
         conn.close()
-        print(f'Glossary Reader App')
+        register_unmapped_tags(DB_PATH)
+        print('Glossary Reader App (v2)')
         print(f'Database    : {DB_PATH}')
-        print(f'Canonical   : {count} terms')
+        print(f'Canonical   : {n_canon} terms')
+        print(f'Candidates  : {"INCLUDED (design preview)" if INCLUDE_CANDIDATES else "hidden (--canonical-only)"}')
+        print(f'Visible     : {n_vis} terms')
+        print(f'Tiers       : {TIERS}')
         print(f'Open        : http://localhost:{args.port}')
         print()
     except Exception as e:
