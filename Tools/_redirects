@@ -7,4 +7,8 @@
 #
 # Render still owns the API surface; only the static page assets moved here.
 
-/api/*  https://lt-tools.onrender.com/api/:splat  200
+/api/*      https://lt-tools.onrender.com/api/:splat       200
+
+# Glossary app — proxied from the same Render service via DispatcherMiddleware.
+# /glossary  and  /glossary/anything  both route here.
+/glossary*  https://lt-tools.onrender.com/glossary:splat  200

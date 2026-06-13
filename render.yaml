@@ -22,6 +22,6 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn site_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    startCommand: gunicorn site_app:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60
     autoDeploy: true
     healthCheckPath: /api/health

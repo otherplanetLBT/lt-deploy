@@ -216,6 +216,26 @@ def api_riser_pad_validate():
     })
 
 
+# -- Glossary sub-app ---------------------------------------------------------
+# Mount the glossary Flask app at /glossary so Netlify-Tools can proxy
+# /glossary* here via _redirects (same pattern as /api/*).
+#
+# DispatcherMiddleware sets SCRIPT_NAME=/glossary before forwarding to the
+# glossary sub-app, which makes url_for() inside the glossary templates
+# automatically produce /glossary/... paths — no template edits needed.
+#
+# IMPORTANT: gunicorn must run `site_app:application`, not `site_app:app`.
+# The health check at /api/health still works because unmatched paths fall
+# through to the default `app`.
+
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+import glossary_app as _glossary_module
+
+application = DispatcherMiddleware(app, {
+    '/glossary': _glossary_module.app,
+})
+
+
 # -- Boot ---------------------------------------------------------------------
 
 if __name__ == '__main__':
