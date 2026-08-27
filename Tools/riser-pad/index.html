@@ -886,19 +886,42 @@ async function loadLibrary() {
 }
 
 // ── Preview / Download ────────────────────────────────────────────────────────
-// First preview after a fresh page load may hit a cold Render server (~30s wake
-// time). The overlay's sub-line carries an explanation only on that first call;
-// subsequent previews show just the primary message. Flag flips on the first
-// SUCCESSFUL response so a failed first attempt still gets the hint on retry.
-let firstPreviewDone = false;
-const COLD_START_HINT = 'First preview can take ~30 seconds while the server starts up.';
+// Cold start can happen on ANY request after ~15 min of Render idle, not
+// just the first one this page load — so the hint is triggered by actual
+// request latency (still pending past COLD_START_DELAY_MS) rather than a
+// first-ever-success flag. The overlay itself now shows on every call,
+// including manual "Preview" clicks, not just auto-triggered ones.
+const COLD_START_DELAY_MS = 3000;
+const COLD_START_HINT = 'Taking longer than usual — the render server may be waking up from idle (up to ~30s).';
+
+// Nothing disables the sliders / type buttons / Preview button while a
+// request is in flight, so clicking through styles (or hitting Preview
+// again) can fire several runPreview() calls before the first resolves —
+// which matters far more once a cold start stretches each round trip to
+// ~30s. requestGeneration + an AbortController make the newest call always
+// win: its response is the only one ever applied, and a superseded request
+// is actively cancelled rather than left to finish for nothing against an
+// already-strained cold-starting free-tier instance.
+let requestGeneration = 0;
+let currentAbortController = null;
 
 async function runPreview(auto) {
   const btn = document.getElementById('btn-preview');
   const lbl = document.getElementById('btn-label');
   const sp  = document.getElementById('spinner');
+
+  if (currentAbortController) currentAbortController.abort();
+  const myGeneration = ++requestGeneration;
+  const controller = new AbortController();
+  currentAbortController = controller;
+
   btn.disabled = true; lbl.textContent = 'Generating…'; sp.classList.add('visible');
-  if (auto) viewport.setLoading(true, 'Generating preview…', firstPreviewDone ? '' : COLD_START_HINT);
+  viewport.setLoading(true, 'Generating preview…', '');
+  const coldStartTimer = setTimeout(() => {
+    if (myGeneration === requestGeneration) {
+      viewport.setLoading(true, 'Generating preview…', COLD_START_HINT);
+    }
+  }, COLD_START_DELAY_MS);
   try {
     const resp = await fetch('/api/riser-pad/slice', {
       method:  'POST',
@@ -908,23 +931,29 @@ async function runPreview(auto) {
         center_height: state.heightEff,
         angle:         signedAngle(),
       }),
+      signal: controller.signal,
     });
+    if (myGeneration !== requestGeneration) return; // superseded while awaiting
     if (!resp.ok) {
-      const e = await resp.json().catch(() => ({}));
-      if (!auto) alert('Error: ' + (e.error || resp.statusText));
+      const err = await resp.json().catch(() => ({}));
+      if (!auto) alert('Error: ' + (err.error || resp.statusText));
       return;
     }
     const buf = await resp.arrayBuffer();
+    if (myGeneration !== requestGeneration) return; // superseded while awaiting
     state.stlBlob = buf;
     viewport.loadSTL(buf);
     document.getElementById('btn-download').disabled = false;
-    firstPreviewDone = true;
     LT.logEvent({ type: 'preview', tool: 'riser-pad' });
   } catch (e) {
+    if (e.name === 'AbortError') return; // superseded — not a real failure
     if (!auto) alert('Request failed: ' + e.message);
   } finally {
-    btn.disabled = false; lbl.textContent = 'Preview'; sp.classList.remove('visible');
-    viewport.setLoading(false);
+    clearTimeout(coldStartTimer);
+    if (myGeneration === requestGeneration) {
+      btn.disabled = false; lbl.textContent = 'Preview'; sp.classList.remove('visible');
+      viewport.setLoading(false);
+    }
   }
 }
 

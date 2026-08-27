@@ -5,12 +5,19 @@ REM Conversation-driven push. Update the commit message each run to match what
 REM this session is shipping; the comment below records the intended changeset.
 REM (For ad-hoc solo pushes outside a conversation, use Manual push.bat.)
 REM
-REM Shipping this run (glossary deploy):
-REM   - Render/glossary_app.py          new — glossary Flask app (WSGI-ready copy)
-REM   - Render/glossary.db              new — SQLite DB (read-only in production)
-REM   - Render/site_app.py              mount glossary at /glossary via DispatcherMiddleware
-REM   - render.yaml                     gunicorn target: site_app:application
-REM   - Tools/_redirects                add /glossary* proxy rule
+REM Shipping this run (cold-start UX fixes, pivot-cup + riser-pad):
+REM   - Tools/pivot-cup/index.html   cold-start hint now latency-triggered (any
+REM                                  request, not just first-ever), overlay
+REM                                  shows on manual Preview clicks too, and a
+REM                                  request-generation + AbortController guard
+REM                                  so a superseded selection can't clobber a
+REM                                  newer one's preview/download.
+REM   - Tools/riser-pad/index.html   same three fixes, mirrored.
+REM   - Tools/shared.js              fixed setLoading()'s sub-message display
+REM                                  bug (was set via style.display = '' which
+REM                                  falls back to the stylesheet's display:none
+REM                                  -- the cold-start hint text was never
+REM                                  actually visible before this).
 
 REM Copy the latest glossary.db before every push so the deployed DB stays current.
 REM Source: The Ultimate Longboard Wiki Project (canonical DB owner for now).
@@ -25,7 +32,7 @@ echo glossary.db copied.
 
 git add -A
 git status
-git commit -m "Deploy glossary to tools.../glossary via DispatcherMiddleware"
+git commit -m "Cold-start UX fixes: latency-triggered hint, overlay on manual clicks, fix hidden sub-message display bug, request-generation guard (pivot-cup + riser-pad)"
 git push origin main
 
 pause

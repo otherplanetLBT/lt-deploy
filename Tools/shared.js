@@ -594,7 +594,7 @@
         const subEl = loadingOverlay && loadingOverlay.querySelector('#loading-sub, .loading-sub');
         if (subEl) {
           subEl.textContent = submsg;
-          subEl.style.display = submsg ? '' : 'none';
+          subEl.style.display = submsg ? 'block' : 'none';
         }
       }
     }
