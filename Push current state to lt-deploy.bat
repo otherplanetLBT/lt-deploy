@@ -5,21 +5,23 @@ REM Conversation-driven push. Update the commit message each run to match what
 REM this session is shipping; the comment below records the intended changeset.
 REM (For ad-hoc solo pushes outside a conversation, use Manual push.bat.)
 REM
-REM Shipping this run (give-up timeout, pivot-cup + riser-pad):
-REM   - Tools/pivot-cup/index.html   added REQUEST_TIMEOUT_MS (45s). A request
-REM   - Tools/riser-pad/index.html   that never settles -- dropped connection,
-REM                                  or gunicorn killing a worker past its own
-REM                                  60s --timeout -- previously left the UI
-REM                                  stuck on "Generating..." forever, since
-REM                                  nothing ever gave up on it. Now the
-REM                                  client aborts after 45s, re-enables the
-REM                                  Preview button, and shows an honest
-REM                                  "Still not responding..." message instead
-REM                                  of hanging silently.
-REM                                  (Found testing the previous push: pivot
-REM                                  cup worked, riser pad's heavier boolean-
-REM                                  subtract geometry likely pushed a cold
-REM                                  start over gunicorn's timeout.)
+REM Shipping this run (fix riser-pad's missing boot auto-preview):
+REM   - Tools/riser-pad/index.html   added the missing `runPreview(true);` to
+REM                                  the boot sequence (pivot-cup already had
+REM                                  it). Without it, riser-pad never sent a
+REM                                  preview request on page load at all --
+REM                                  the loading overlay's static HTML (already
+REM                                  class="visible", text "Generating
+REM                                  preview...") just sat there forever with
+REM                                  nothing to clear it, on warm OR cold
+REM                                  Render. Confirmed via the user's own
+REM                                  DevTools Network tab: no /slice request
+REM                                  present at all until an interaction
+REM                                  (style click, slider drag, Preview
+REM                                  button) fired one manually. Not a
+REM                                  cold-start issue -- the give-up-timeout
+REM                                  fix from the previous push is unrelated
+REM                                  but still shipped and still good.
 
 REM Copy the latest glossary.db before every push so the deployed DB stays current.
 REM Source: The Ultimate Longboard Wiki Project (canonical DB owner for now).
@@ -34,7 +36,7 @@ echo glossary.db copied.
 
 git add -A
 git status
-git commit -m "Add client-side give-up timeout so a hung request re-enables Preview instead of sticking on Generating forever (pivot-cup + riser-pad)"
+git commit -m "Fix riser-pad: add missing boot-time runPreview(true) call so the initial preview actually loads on page open"
 git push origin main
 
 pause
