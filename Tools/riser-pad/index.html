@@ -894,6 +894,15 @@ async function loadLibrary() {
 const COLD_START_DELAY_MS = 3000;
 const COLD_START_HINT = 'Taking longer than usual — the render server may be waking up from idle (up to ~30s).';
 
+// A request that never settles at all (dropped connection, a proxy layer
+// that never times out on its own, gunicorn killing a worker past its own
+// --timeout) would otherwise leave the UI stuck on "Generating…" forever —
+// nothing before this ever gave up on a hung request. REQUEST_TIMEOUT_MS is
+// a generous ceiling that sits under gunicorn's 60s worker timeout, so the
+// client gives up cleanly before the server would kill the connection out
+// from under it.
+const REQUEST_TIMEOUT_MS = 45000;
+
 // Nothing disables the sliders / type buttons / Preview button while a
 // request is in flight, so clicking through styles (or hitting Preview
 // again) can fire several runPreview() calls before the first resolves —
@@ -914,6 +923,7 @@ async function runPreview(auto) {
   const myGeneration = ++requestGeneration;
   const controller = new AbortController();
   currentAbortController = controller;
+  let timedOut = false;
 
   btn.disabled = true; lbl.textContent = 'Generating…'; sp.classList.add('visible');
   viewport.setLoading(true, 'Generating preview…', '');
@@ -922,6 +932,10 @@ async function runPreview(auto) {
       viewport.setLoading(true, 'Generating preview…', COLD_START_HINT);
     }
   }, COLD_START_DELAY_MS);
+  const giveUpTimer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
   try {
     const resp = await fetch('/api/riser-pad/slice', {
       method:  'POST',
@@ -946,13 +960,19 @@ async function runPreview(auto) {
     document.getElementById('btn-download').disabled = false;
     LT.logEvent({ type: 'preview', tool: 'riser-pad' });
   } catch (e) {
-    if (e.name === 'AbortError') return; // superseded — not a real failure
+    if (e.name === 'AbortError') {
+      if (timedOut && myGeneration === requestGeneration) {
+        viewport.setLoading(true, 'Still not responding…', 'This is taking much longer than expected. Try Preview again in a moment.');
+      }
+      return; // superseded or timed out — not a normal failure
+    }
     if (!auto) alert('Request failed: ' + e.message);
   } finally {
     clearTimeout(coldStartTimer);
+    clearTimeout(giveUpTimer);
     if (myGeneration === requestGeneration) {
       btn.disabled = false; lbl.textContent = 'Preview'; sp.classList.remove('visible');
-      viewport.setLoading(false);
+      if (!timedOut) viewport.setLoading(false);
     }
   }
 }

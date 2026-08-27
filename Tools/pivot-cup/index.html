@@ -842,6 +842,15 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
 const COLD_START_DELAY_MS = 3000;
 const COLD_START_HINT = 'Taking longer than usual — the render server may be waking up from idle (up to ~30s).';
 
+// A request that never settles at all (dropped connection, a proxy layer
+// that never times out on its own, gunicorn killing a worker past its own
+// --timeout) would otherwise leave the UI stuck on "Generating…" forever —
+// nothing before this ever gave up on a hung request. REQUEST_TIMEOUT_MS is
+// a generous ceiling that sits under gunicorn's 60s worker timeout, so the
+// client gives up cleanly before the server would kill the connection out
+// from under it.
+const REQUEST_TIMEOUT_MS = 45000;
+
 // Nothing disables the sliders / type buttons / Preview button while a
 // request is in flight, so clicking through cup types (or hitting Preview
 // again) can fire several runPreview() calls before the first resolves —
@@ -862,6 +871,7 @@ async function runPreview(auto) {
   const myGeneration = ++requestGeneration;
   const controller = new AbortController();
   currentAbortController = controller;
+  let timedOut = false;
 
   btn.disabled = true; lbl.textContent = 'Generating…'; spin.classList.add('visible');
   viewport.setLoading(true, 'Building mesh…', '');
@@ -870,6 +880,10 @@ async function runPreview(auto) {
       viewport.setLoading(true, 'Building mesh…', COLD_START_HINT);
     }
   }, COLD_START_DELAY_MS);
+  const giveUpTimer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
 
   try {
     const body = {
@@ -898,13 +912,19 @@ async function runPreview(auto) {
     document.getElementById('btn-download').disabled = false;
     LT.logEvent({ type: 'preview', tool: 'pivot-cup' });
   } catch (e) {
-    if (e.name === 'AbortError') return; // superseded — not a real failure
+    if (e.name === 'AbortError') {
+      if (timedOut && myGeneration === requestGeneration) {
+        viewport.setLoading(true, 'Still not responding…', 'This is taking much longer than expected. Try Preview again in a moment.');
+      }
+      return; // superseded or timed out — not a normal failure
+    }
     if (!auto) alert('Preview failed: ' + e.message);
   } finally {
     clearTimeout(coldStartTimer);
+    clearTimeout(giveUpTimer);
     if (myGeneration === requestGeneration) {
       btn.disabled = !state.valid; lbl.textContent = 'Preview'; spin.classList.remove('visible');
-      viewport.setLoading(false);
+      if (!timedOut) viewport.setLoading(false);
     }
   }
 }
