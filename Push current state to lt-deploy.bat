@@ -5,56 +5,36 @@ REM Conversation-driven push. Update the commit message each run to match what
 REM this session is shipping; the comment below records the intended changeset.
 REM (For ad-hoc solo pushes outside a conversation, use Manual push.bat.)
 REM
-REM Shipping this run -- TWO changesets landed unstaged together:
+REM Shipping this run -- session 40:
 REM
-REM   1) Riser pad: template attribution + library popout (session 38).
-REM      * Attribution rides in the master STL's filename as bracketed suffix
-REM        fields, e.g. "Skoa Vapor 26 [Template by X] [printables.com+@X].stl".
-REM        parse_style_stem() in Render/site_app.py splits it;
-REM        /api/riser-pad/library now returns {id, name, credit, link} objects
-REM        instead of bare strings (id stays the raw stem, so master lookup is
-REM        unchanged). Shown as a plain-text .viewport-credit pill in the
-REM        preview -- site-time only, never in the download filename.
-REM      * Library is now a popout built into document.body and positioned off
-REM        its toggle, replacing the inline drawer that pushed the sidebar down
-REM        on every open; the toggle collapses to the selected template's name.
-REM      * The four test masters in Render/assets/riser-pad-stls/ are RENAMED
-REM        into the new grammar with FILLER credits (Filler Contributor,
-REM        example.com handles) -- git sees these as deletes + adds. Operator
-REM        has okayed them going live as tests.
-REM      Files: Render/site_app.py, Render/assets/riser-pad-stls/* (renames),
-REM      Tools/shared.css, Tools/riser-pad/index.html.
-REM      Full detail: SESSION_LOG.md session 38.
+REM   Riser pad: fix preview 404 on attributed library templates.
+REM     Session 38's template-attribution feature split each library style
+REM     into a raw filename `id` (what the API needs to find the master STL)
+REM     and a truncated display `name` (safe for filenames/logging). But
+REM     Preview's fetch to /api/riser-pad/slice sent state.styleName (display
+REM     name) instead of state.style (raw id) -- so any master with a
+REM     bracketed credit suffix 404'd with "Master STL not found" the moment
+REM     Preview ran, even though the library listing and selection worked
+REM     fine (that endpoint never needs the raw id). Untitled masters with no
+REM     brackets (Solid/Skeleton/Drop-thru, Test 3) were unaffected because
+REM     their name and id are identical, which masked the bug.
+REM     Fix: Tools/riser-pad/index.html line ~1096, style: state.styleName ->
+REM     style: state.style. The other two state.styleName uses (download
+REM     filename slug, Mission Report/log-event params) are correct as-is and
+REM     untouched.
+REM   Files: Tools/riser-pad/index.html.
 REM
-REM   2) Favicon random orientation (session 39): favicon-2/3/4.svg + .ico added
-REM      to both Landing/ and Tools/ (favicon.svg/.ico from session 37 is
-REM      variant 1); a small inline script on all 5 pages + the Lab source picks
-REM      one at random and persists it via sessionStorage for the rest of that
-REM      tab's session (revised same day from every-page-load, which flickered
-REM      visibly on navigation). apple-touch-icon.png untouched (stays static).
-REM      Full detail: SESSION_LOG.md session 39.
-REM
-REM The project root moved off Google Drive to D:\Projects\Website Generators
-REM (session 38). The glossary.db copy step below was flagged as unverified
-REM against the new root -- VERIFIED 2026-08-28 and correct: from deploy\,
-REM ..\..\ resolves to D:\Projects\, and the Wiki project sits at
-REM D:\Projects\The Ultimate Longboard Wiki Project\Wiki\Glossary\glossary.db.
-REM No change needed.
-
-REM Copy the latest glossary.db before every push so the deployed DB stays current.
-REM Source: The Ultimate Longboard Wiki Project (canonical DB owner for now).
-REM Path from deploy\: ..\..\  = Projects\  (deploy is inside Website Generators\)
-copy /Y "..\..\The Ultimate Longboard Wiki Project\Wiki\Glossary\glossary.db" "Render\glossary.db"
-if errorlevel 1 (
-    echo ERROR: Could not copy glossary.db -- check that the Wiki project folder is present.
-    pause
-    exit /b 1
-)
-echo glossary.db copied.
+REM Removed the automatic glossary.db copy step (was: unconditional copy
+REM before every push). Operator decision 2026-08-28 -- the glossary DB
+REM doesn't change often enough to justify re-copying it on every push; the
+REM committed Render/glossary.db just stays whatever was last checked in
+REM until refreshed on purpose. To refresh it manually before a push, run
+REM from deploy\:
+REM   copy /Y "..\..\The Ultimate Longboard Wiki Project\Wiki\Glossary\glossary.db" "Render\glossary.db"
 
 git add -A
 git status
-git commit -m "Riser pad: filename-based template attribution + library popout; random favicon orientation per session"
+git commit -m "Riser pad: fix preview 404 on attributed library templates (state.styleName -> state.style)"
 git push origin main
 
 pause

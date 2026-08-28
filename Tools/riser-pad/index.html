@@ -1093,7 +1093,7 @@ async function runPreview(auto) {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        style:         state.styleName,
+        style:         state.style,           // raw stem — what the API resolves; styleName is display-only
         center_height: state.heightEff,
         angle:         signedAngle(),
       }),
