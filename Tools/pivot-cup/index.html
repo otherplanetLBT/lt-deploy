@@ -9,7 +9,13 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <script>
   (function(){
-    var n = Math.floor(Math.random() * 4) + 1;
+    var n;
+    try { n = sessionStorage.getItem('faviconVariant'); } catch (e) {}
+    if (!n) {
+      n = String(Math.floor(Math.random() * 4) + 1);
+      try { sessionStorage.setItem('faviconVariant', n); } catch (e) {}
+    }
+    n = parseInt(n, 10) || 1;
     if (n === 1) return;
     var svg = document.querySelector('link[rel="icon"][type="image/svg+xml"]');
     var ico = document.querySelector('link[rel="icon"][sizes="any"]');

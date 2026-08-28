@@ -28,9 +28,11 @@ REM      Full detail: SESSION_LOG.md session 38.
 REM
 REM   2) Favicon random orientation (session 39): favicon-2/3/4.svg + .ico added
 REM      to both Landing/ and Tools/ (favicon.svg/.ico from session 37 is
-REM      variant 1); a small inline script on all 5 pages + the Lab source
-REM      randomly picks one on every page load. apple-touch-icon.png untouched
-REM      (stays static). Full detail: SESSION_LOG.md session 39.
+REM      variant 1); a small inline script on all 5 pages + the Lab source picks
+REM      one at random and persists it via sessionStorage for the rest of that
+REM      tab's session (revised same day from every-page-load, which flickered
+REM      visibly on navigation). apple-touch-icon.png untouched (stays static).
+REM      Full detail: SESSION_LOG.md session 39.
 REM
 REM The project root moved off Google Drive to D:\Projects\Website Generators
 REM (session 38). The glossary.db copy step below was flagged as unverified
@@ -52,7 +54,7 @@ echo glossary.db copied.
 
 git add -A
 git status
-git commit -m "Riser pad: filename-based template attribution + library popout; random favicon orientation per page load"
+git commit -m "Riser pad: filename-based template attribution + library popout; random favicon orientation per session"
 git push origin main
 
 pause
