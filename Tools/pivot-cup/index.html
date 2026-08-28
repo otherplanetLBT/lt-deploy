@@ -7,6 +7,16 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script>
+  (function(){
+    var n = Math.floor(Math.random() * 4) + 1;
+    if (n === 1) return;
+    var svg = document.querySelector('link[rel="icon"][type="image/svg+xml"]');
+    var ico = document.querySelector('link[rel="icon"][sizes="any"]');
+    if (svg) svg.href = '/favicon-' + n + '.svg';
+    if (ico) ico.href = '/favicon-' + n + '.ico';
+  })();
+  </script>
   <link rel="stylesheet" href="/shared.css">
   <style>
     /* Page-specific tokens — most live in /shared.css now. */

@@ -12,7 +12,7 @@ Routes:
     /api/health                    GET  -> 200 'ok' (warmup/cold-start ping)
     /api/log-event                 POST -> 204 (forwards usage event to Sheet)
     /api/pivot-cup/generate        POST -> STL bytes
-    /api/riser-pad/library         GET  -> JSON list of library style names
+    /api/riser-pad/library         GET  -> JSON list of library style objects
     /api/riser-pad/slice           POST -> STL bytes
     /api/riser-pad/validate        POST -> validation JSON
 
@@ -26,6 +26,7 @@ do not ship.
 
 import io
 import os
+import re
 import math
 import sys
 
@@ -65,6 +66,56 @@ def get_master_path(style):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Master STL not found: '{style}.stl'")
     return path
+
+
+# -- Template attribution ------------------------------------------------------
+# Outside-contributed masters carry their credit in the filename itself, so
+# adding a credited template stays a single admin action (drop or rename a file)
+# and no registry or per-contributor code exists:
+#
+#   Solid.stl                                                           -> house template, no credit
+#   Skoa Vapor 26 [Template by Nikita Che].stl                          -> credit
+#   Skoa Vapor 26 [Template by Nikita Che] [printables.com+@Shade].stl  -> credit + URL
+#
+# Bracket contents are printed VERBATIM. There is deliberately no credit
+# vocabulary in this file -- "Template by X" is a house habit, not a rule, so the
+# scheme does not over-fit any one contributor's workflow. Field 1 is the credit
+# line, field 2 the URL line; both optional, any extras ignored.
+#
+# '/' is illegal in a filename, so a URL is written with '+' and swapped back for
+# display. Nothing resolves it: it is plain text on the page by design, and that
+# choice is what keeps a platform-shorthand -> URL map out of this file. See
+# Design Documents/RISER_PAD_GENERATOR.md, Template attribution.
+#
+# NOTE: '[' is a glob metacharacter. Only os.listdir walks RISER_STL_DIR today; a
+# glob.glob over that directory would misread these names.
+
+_BRACKET_FIELD_RE = re.compile(r'\[([^\[\]]*)\]')
+
+
+def parse_style_stem(stem):
+    """Split a master STL filename stem into display name + attribution.
+
+    Returns {'id', 'name', 'credit', 'link'}. 'id' is the RAW stem and stays the
+    wire identifier the client sends back as 'style', so get_master_path() and
+    DEFAULT_STL_NAMES matching are both unaffected by this parsing.
+    """
+    # Positional, NOT compacted: an empty bracket is a deliberate placeholder,
+    # so 'Name [] [url]' keeps the URL in the URL slot instead of silently
+    # promoting it into the credit line (and skipping the '+' -> '/' swap).
+    fields = [m.group(1).strip() for m in _BRACKET_FIELD_RE.finditer(stem)]
+
+    first = _BRACKET_FIELD_RE.search(stem)
+    name  = (stem[:first.start()] if first else stem).strip()
+    if not name:                       # pathological "[only a bracket]" stem
+        name = stem.strip()
+
+    return {
+        'id':     stem,
+        'name':   name,
+        'credit': fields[0] if len(fields) > 0 else '',
+        'link':   fields[1].replace('+', '/') if len(fields) > 1 else '',
+    }
 
 
 # -- Flask app ----------------------------------------------------------------
@@ -147,15 +198,21 @@ def api_pivot_cup_generate():
 
 @app.route('/api/riser-pad/library', methods=['GET'])
 def api_riser_pad_library():
-    """Return a sorted list of library style names (all STLs except the 3 defaults)."""
-    names = []
+    """Return library styles (all STLs except the 3 defaults) as objects.
+
+    Shape: [{id, name, credit, link}, ...] -- see parse_style_stem. Sorted by
+    display name, not by raw stem, so a bracketed credit can never reorder the
+    drawer.
+    """
+    items = []
     if os.path.isdir(RISER_STL_DIR):
-        for fname in sorted(os.listdir(RISER_STL_DIR)):
+        for fname in os.listdir(RISER_STL_DIR):
             if fname.endswith('.stl'):
-                name = fname[:-4]
-                if name not in DEFAULT_STL_NAMES:
-                    names.append(name)
-    return jsonify(names)
+                stem = fname[:-4]
+                if stem not in DEFAULT_STL_NAMES:
+                    items.append(parse_style_stem(stem))
+    items.sort(key=lambda it: it['name'].lower())
+    return jsonify(items)
 
 
 @app.route('/api/riser-pad/slice', methods=['POST'])
@@ -179,7 +236,9 @@ def api_riser_pad_slice():
         app.logger.exception("Riser pad slice error")
         return jsonify({'error': f'Slice failed: {e}'}), 500
 
-    filename = rp.filename_for(style, center_height, angle_deg)
+    # Display name, not the raw stem: attribution is site-time only and must
+    # never leak into a download filename (design doc, Template attribution).
+    filename = rp.filename_for(parse_style_stem(style)['name'], center_height, angle_deg)
     return send_file(io.BytesIO(stl_bytes),
                      mimetype='application/octet-stream',
                      as_attachment=False,

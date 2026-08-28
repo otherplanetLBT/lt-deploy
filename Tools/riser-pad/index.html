@@ -7,6 +7,16 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <script>
+  (function(){
+    var n = Math.floor(Math.random() * 4) + 1;
+    if (n === 1) return;
+    var svg = document.querySelector('link[rel="icon"][type="image/svg+xml"]');
+    var ico = document.querySelector('link[rel="icon"][sizes="any"]');
+    if (svg) svg.href = '/favicon-' + n + '.svg';
+    if (ico) ico.href = '/favicon-' + n + '.ico';
+  })();
+  </script>
   <link rel="stylesheet" href="/shared.css">
   <style>
     /* Page-specific tokens — most live in /shared.css now.
@@ -111,15 +121,25 @@
     .library-toggle.has-active { border-color: var(--accent); color: var(--accent); }
     .library-chevron { font-size: 0.8rem; transition: transform 0.2s; line-height: 1; }
     .library-chevron.open { transform: rotate(180deg); }
-    .library-drawer {
-      overflow: hidden; max-height: 0;
-      transition: max-height 0.25s ease;
-    }
-    .library-drawer.open { max-height: 240px; overflow-y: auto; }
-    .library-drawer-inner {
-      padding: 4px 0 2px;
+    .library-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Popout, not an inline drawer. Built into document.body and positioned
+       against the toggle (same approach as LT.initTooltips in shared.js),
+       because .sidebar has overflow-y:auto + overflow-x:hidden and would clip
+       an absolutely-positioned child on both axes. Consequences worth keeping:
+       opening no longer pushes the sidebar's contents down, the list scrolls
+       inside a bounded panel instead of growing without limit, and the panel
+       can be wider than the 300px sidebar — which long template names need. */
+    .library-popout {
+      position: absolute; z-index: 150;
+      background: var(--surface); border: 1px solid var(--border-mid);
+      border-radius: 8px; padding: 4px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+      overflow-y: auto; overscroll-behavior: contain;
       display: flex; flex-direction: column; gap: 2px;
+      opacity: 0; transform: translateY(-4px);
+      transition: opacity 0.15s ease, transform 0.15s ease;
     }
+    .library-popout.visible { opacity: 1; transform: translateY(0); }
     .library-item {
       padding: 7px 10px; border-radius: 5px; cursor: pointer;
       font-family: var(--mono); font-size: 0.7rem; color: var(--text-mid);
@@ -301,6 +321,19 @@
       color: var(--text-dim); background: rgba(10,12,20,0.75);
       padding: 4px 10px; border-radius: 20px; pointer-events: none; display: none;
     }
+    /* Template attribution pill. Canonical rules live in shared.css; this local
+       override only matches the two overlay pills above, which are themselves
+       page-local overrides of shared.css. Keep the three in step. */
+    .viewport-credit {
+      position: absolute; bottom: 46px; right: 12px;   /* clears the hint row */
+      display: flex; flex-direction: column; gap: 1px;
+      max-width: 45%; text-align: right;
+      font-size: 0.62rem; line-height: 1.45; letter-spacing: 0.03em;
+      color: var(--text-dim); background: rgba(10,12,20,0.7);
+      padding: 5px 12px; border-radius: 12px; pointer-events: none;
+      overflow-wrap: anywhere;
+    }
+    .viewport-credit[hidden] { display: none; }
 
     /* Page load-in cascade — see ltFadeUp in shared.css. Four-step stagger
        buys ~1s of motion while the first preview is generating, hiding the
@@ -396,15 +429,11 @@
             </button>
           </div>
           <div class="library-section" style="margin-top:8px;">
-            <button class="library-toggle" id="library-toggle" aria-expanded="false">
-              <span>Library</span>
+            <button class="library-toggle" id="library-toggle" aria-expanded="false"
+                    aria-haspopup="listbox">
+              <span class="library-label" id="library-label">Library</span>
               <span class="library-chevron" id="library-chevron">▾</span>
             </button>
-            <div class="library-drawer" id="library-drawer" role="listbox" aria-label="Library styles">
-              <div class="library-drawer-inner" id="library-list">
-                <span class="library-empty">Loading…</span>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -499,6 +528,12 @@
       </div>
       <div class="viewport-status" id="viewport-status"></div>
       <div class="viewport-hint" id="viewport-hint">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
+      <!-- Attribution for contributed templates. Populated by renderCredit();
+           hidden for house templates. Text only, deliberately not a link. -->
+      <div class="viewport-credit" id="viewport-credit" hidden>
+        <span class="credit-line" id="credit-line"></span>
+        <span class="credit-url"  id="credit-url" hidden></span>
+      </div>
     </div>
 
   </div>
@@ -523,7 +558,11 @@ const atanDeg = r => Math.atan(r) * 180 / Math.PI;
 
 // ── Page state ────────────────────────────────────────────────────────────────
 const state = {
-  style:        'Solid',  // display name — matches STL filename without extension
+  // style is the RAW filename stem and the API identifier; for a contributed
+  // template it carries bracketed attribution fields. styleName is the parsed
+  // display name and is the only one that may reach a filename or a log.
+  style:        'Solid',
+  styleName:    'Solid',
   heightStored: 5.0,      // mm — what user dragged/typed
   angleStored:  0.0,      // degrees
   heightEff:    5.0,
@@ -819,8 +858,30 @@ flipBtn.addEventListener('click', () => {
 });
 
 // ── Style selection ───────────────────────────────────────────────────────────
-function setStyle(name) {
-  state.style   = name;
+// id -> {id, name, credit, link} for library styles, filled by renderLibraryItems.
+// The three default styles are never in here, so they resolve to no credit.
+const libraryMeta = new Map();
+
+const creditBox  = document.getElementById('viewport-credit');
+const creditLine = document.getElementById('credit-line');
+const creditUrl  = document.getElementById('credit-url');
+
+// Attribution pill, bottom-right of the preview. textContent, not innerHTML:
+// these strings come from a filename, so never build markup out of them.
+function renderCredit(meta) {
+  const credit = (meta && meta.credit) || '';
+  const link   = (meta && meta.link)   || '';
+  creditLine.textContent = credit;
+  creditUrl.textContent  = link;
+  creditUrl.hidden       = !link;
+  creditBox.hidden       = !(credit || link);
+}
+
+function setStyle(id) {
+  const meta      = libraryMeta.get(id);
+  state.style     = id;                          // raw stem — what the API resolves
+  state.styleName = (meta && meta.name) || id;   // display name — safe for filenames
+  renderCredit(meta);
   state.stlBlob = null;
   document.getElementById('btn-download').disabled = true;
   runPreview(true);
@@ -829,7 +890,10 @@ function setStyle(name) {
 function clearAllStyleActive() {
   document.querySelectorAll('.pattern-btn').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.library-item').forEach(x => x.classList.remove('active'));
-  document.getElementById('library-toggle').classList.remove('has-active');
+  const t = document.getElementById('library-toggle');
+  t.classList.remove('has-active');
+  // Collapse back to the neutral label; a library selection re-sets it below.
+  document.getElementById('library-label').textContent = 'Library';
 }
 
 document.querySelectorAll('.pattern-btn').forEach(b => b.addEventListener('click', () => {
@@ -838,41 +902,130 @@ document.querySelectorAll('.pattern-btn').forEach(b => b.addEventListener('click
   setStyle(b.dataset.style);
 }));
 
-// ── Library pull-down ─────────────────────────────────────────────────────────
-const libraryToggle  = document.getElementById('library-toggle');
-const libraryDrawer  = document.getElementById('library-drawer');
-const libraryChevron = document.getElementById('library-chevron');
-const libraryList    = document.getElementById('library-list');
+// ── Library popout ────────────────────────────────────────────────────────────
+// A panel built into document.body on open, positioned against the toggle —
+// not an inline drawer. Two reasons: .sidebar clips absolutely-positioned
+// children (overflow-y:auto + overflow-x:hidden), and an inline drawer pushes
+// the rest of the sidebar down every time it opens, which gets worse as the
+// library grows. Open/close/dismiss semantics mirror LT.initTooltips.
+const libraryToggle   = document.getElementById('library-toggle');
+const libraryChevron  = document.getElementById('library-chevron');
+const libraryLabel    = document.getElementById('library-label');
 
-libraryToggle.addEventListener('click', () => {
-  const open = libraryDrawer.classList.toggle('open');
-  libraryChevron.classList.toggle('open', open);
-  libraryToggle.setAttribute('aria-expanded', open);
-});
+let libraryData   = null;   // null = still loading, [] = loaded and empty
+let libraryPopout = null;
 
-function renderLibraryItems(names) {
-  if (!names.length) {
-    libraryList.innerHTML = '<span class="library-empty">No library items yet.</span>';
+function closeLibrary() {
+  if (!libraryPopout) return;
+  const p = libraryPopout;
+  libraryPopout = null;
+  libraryChevron.classList.remove('open');
+  libraryToggle.setAttribute('aria-expanded', 'false');
+  p.classList.remove('visible');
+  setTimeout(() => { if (p.parentNode) p.parentNode.removeChild(p); }, 200);
+}
+
+// Width/height/flip are all computed from live rects rather than fixed values,
+// so the panel behaves at any viewport size and never runs off-screen.
+function positionLibrary(pop) {
+  const margin = 8, gap = 6;
+  const rect = libraryToggle.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const sx = window.scrollX,    sy = window.scrollY;
+
+  // At least as wide as the toggle, wider where there's room: template names
+  // are longer than the 300px sidebar comfortably shows.
+  const width = Math.min(Math.max(rect.width, 320), vw - margin * 2);
+  pop.style.width = width + 'px';
+
+  // Cap to whichever side has more room, then let the list scroll inside it.
+  const below = vh - rect.bottom - margin - gap;
+  const above = rect.top - margin - gap;
+  const flip  = below < 180 && above > below;
+  pop.style.maxHeight = Math.max(120, Math.min(340, flip ? above : below)) + 'px';
+
+  const h = pop.getBoundingClientRect().height;   // after maxHeight is applied
+  let left = rect.left + sx;
+  if (left + width > sx + vw - margin) left = sx + vw - width - margin;
+  if (left < sx + margin)              left = sx + margin;
+
+  pop.style.left = left + 'px';
+  pop.style.top  = (flip ? rect.top + sy - h - gap : rect.bottom + sy + gap) + 'px';
+}
+
+function buildLibraryItems(pop) {
+  if (libraryData === null) {
+    pop.innerHTML = '<span class="library-empty">Loading…</span>';
     return;
   }
-  libraryList.innerHTML = names.map(name =>
-    `<div class="library-item" role="option" data-style="${name}">${name}</div>`
-  ).join('');
-  libraryList.querySelectorAll('.library-item').forEach(item => {
-    item.addEventListener('click', () => {
+  if (!libraryData.length) {
+    pop.innerHTML = '<span class="library-empty">No library items yet.</span>';
+    return;
+  }
+  pop.innerHTML = '';
+  libraryData.forEach(it => {
+    libraryMeta.set(it.id, it);
+    const el = document.createElement('div');
+    el.className     = 'library-item' + (it.id === state.style ? ' active' : '');
+    el.dataset.style = it.id;
+    el.textContent   = it.name;          // display name only — never the raw stem
+    el.setAttribute('role', 'option');
+    el.setAttribute('aria-selected', it.id === state.style ? 'true' : 'false');
+    el.addEventListener('click', () => {
       clearAllStyleActive();
-      item.classList.add('active');
       libraryToggle.classList.add('has-active');
-      setStyle(item.dataset.style);
+      libraryLabel.textContent = it.name;
+      setStyle(it.id);
+      closeLibrary();
     });
+    pop.appendChild(el);
   });
+}
+
+function openLibrary() {
+  closeLibrary();
+  const pop = document.createElement('div');
+  pop.className = 'library-popout';
+  pop.setAttribute('role', 'listbox');
+  pop.setAttribute('aria-label', 'Library templates');
+  buildLibraryItems(pop);
+  document.body.appendChild(pop);
+  positionLibrary(pop);
+  requestAnimationFrame(() => pop.classList.add('visible'));
+  libraryChevron.classList.add('open');
+  libraryToggle.setAttribute('aria-expanded', 'true');
+  libraryPopout = pop;
+}
+
+libraryToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (libraryPopout) closeLibrary(); else openLibrary();
+});
+
+document.addEventListener('click', (e) => {
+  if (libraryPopout && !libraryPopout.contains(e.target)) closeLibrary();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && libraryPopout) closeLibrary();
+});
+// Simplest correct behaviour on layout change is to close, same as tooltips.
+// Capture phase so a scroll inside .sidebar (which doesn't bubble) is caught.
+window.addEventListener('resize', closeLibrary);
+window.addEventListener('scroll', closeLibrary, true);
+
+// items: [{id, name, credit, link}] from /api/riser-pad/library.
+function renderLibraryItems(items) {
+  libraryData = items;
+  libraryMeta.clear();
+  items.forEach(it => libraryMeta.set(it.id, it));
+  if (libraryPopout) { buildLibraryItems(libraryPopout); positionLibrary(libraryPopout); }
 }
 
 async function loadLibrary() {
   try {
     const resp  = await fetch('/api/riser-pad/library');
-    const names = resp.ok ? await resp.json() : [];
-    renderLibraryItems(names);
+    const items = resp.ok ? await resp.json() : [];
+    renderLibraryItems(Array.isArray(items) ? items : []);
   } catch {
     renderLibraryItems([]);
   }
@@ -934,7 +1087,7 @@ async function runPreview(auto) {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        style:         state.style,
+        style:         state.styleName,
         center_height: state.heightEff,
         angle:         signedAngle(),
       }),
@@ -976,7 +1129,9 @@ document.getElementById('btn-download').addEventListener('click', () => {
   if (!state.stlBlob) return;
   const a  = document.createElement('a');
   const hs = state.heightEff.toFixed(1).replace('.', 'p') + 'mm';
-  const styleSlug = state.style.toLowerCase().replace(/\s+/g, '_');
+  // styleName, not style: attribution is site-time only and must never leak
+  // into a download filename (design doc § Template attribution).
+  const styleSlug = state.styleName.toLowerCase().replace(/\s+/g, '_');
   const sa  = signedAngle();
   const as  = sa.toFixed(1).replace('.', 'p') + 'deg';  // e.g. -10p0deg
   a.download = `riser_${styleSlug}_${as}_${hs}.stl`;
@@ -989,7 +1144,7 @@ document.getElementById('btn-download').addEventListener('click', () => {
     tool: 'riser-pad',
     unit: state.unit,
     params: {
-      style:         state.style,
+      style:         state.styleName,
       center_height: +state.heightEff.toFixed(3),
       angle:         +signedAngle().toFixed(3),
     },

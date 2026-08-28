@@ -5,31 +5,39 @@ REM Conversation-driven push. Update the commit message each run to match what
 REM this session is shipping; the comment below records the intended changeset.
 REM (For ad-hoc solo pushes outside a conversation, use Manual push.bat.)
 REM
-REM Shipping this run (loading-overlay message cohesion, staged since
-REM session 33-34, plus the logo-asset export capability built session 36):
-REM   - Tools/shared.css   .loading-msg is the single source of truth
-REM                        (0.7rem -> 0.95rem). .loading-ring is now a 96px
-REM                        flex-sized mount for the real animated brand mark
-REM                        (LOGO-ASSET-marker block: baked .lm-slant /
-REM                        .lm-wobble / .lm-gear rules + keyframes), replacing
-REM                        the old plain 44px spinner.
-REM   - Tools/shared.js    LOGO_MARK_SVG (LOGO-ASSET-marker block) + 
-REM                        injectLoaderMark(), called from autoInit(), swaps
-REM                        the real mark into every .loading-ring on load.
-REM   - Tools/pivot-cup/index.html, Tools/riser-pad/index.html
-REM                        local .loading-overlay/.loading-ring/.loading-msg
-REM                        override drift removed; both now use shared.css's
-REM                        single definition and the real animated mark.
-REM   - Tools/logo/index.html   the Logo Animation Lab itself: new
-REM                        LogoAsset reducer/baker/emitter, PRESETS
-REM                        (hero/loader), export preview panel (renders the
-REM                        emitted string, not a live-SVG approximation),
-REM                        Vars/Literal color-mode toggle, Export Ship JSON.
-REM                        Shipped design: colorMode "literal", visible
-REM                        border, eye-tuned gear/wobble timing -- see
-REM                        Logo Animation/STLPreviewPageLoadingLogo.json for
-REM                        the exact params (round-trips into a Lab preset).
-REM   Full detail: Logo Animation/Logo_Animation.md, SESSION_LOG.md session 36.
+REM Shipping this run -- TWO changesets landed unstaged together:
+REM
+REM   1) Riser pad: template attribution + library popout (session 38).
+REM      * Attribution rides in the master STL's filename as bracketed suffix
+REM        fields, e.g. "Skoa Vapor 26 [Template by X] [printables.com+@X].stl".
+REM        parse_style_stem() in Render/site_app.py splits it;
+REM        /api/riser-pad/library now returns {id, name, credit, link} objects
+REM        instead of bare strings (id stays the raw stem, so master lookup is
+REM        unchanged). Shown as a plain-text .viewport-credit pill in the
+REM        preview -- site-time only, never in the download filename.
+REM      * Library is now a popout built into document.body and positioned off
+REM        its toggle, replacing the inline drawer that pushed the sidebar down
+REM        on every open; the toggle collapses to the selected template's name.
+REM      * The four test masters in Render/assets/riser-pad-stls/ are RENAMED
+REM        into the new grammar with FILLER credits (Filler Contributor,
+REM        example.com handles) -- git sees these as deletes + adds. Operator
+REM        has okayed them going live as tests.
+REM      Files: Render/site_app.py, Render/assets/riser-pad-stls/* (renames),
+REM      Tools/shared.css, Tools/riser-pad/index.html.
+REM      Full detail: SESSION_LOG.md session 38.
+REM
+REM   2) Favicon random orientation (session 39): favicon-2/3/4.svg + .ico added
+REM      to both Landing/ and Tools/ (favicon.svg/.ico from session 37 is
+REM      variant 1); a small inline script on all 5 pages + the Lab source
+REM      randomly picks one on every page load. apple-touch-icon.png untouched
+REM      (stays static). Full detail: SESSION_LOG.md session 39.
+REM
+REM The project root moved off Google Drive to D:\Projects\Website Generators
+REM (session 38). The glossary.db copy step below was flagged as unverified
+REM against the new root -- VERIFIED 2026-08-28 and correct: from deploy\,
+REM ..\..\ resolves to D:\Projects\, and the Wiki project sits at
+REM D:\Projects\The Ultimate Longboard Wiki Project\Wiki\Glossary\glossary.db.
+REM No change needed.
 
 REM Copy the latest glossary.db before every push so the deployed DB stays current.
 REM Source: The Ultimate Longboard Wiki Project (canonical DB owner for now).
@@ -44,7 +52,7 @@ echo glossary.db copied.
 
 git add -A
 git status
-git commit -m "Ship animated logo-mark loading overlay (Logo Asset Lab export capability) + unify loading message text/size"
+git commit -m "Riser pad: filename-based template attribution + library popout; random favicon orientation per page load"
 git push origin main
 
 pause
