@@ -866,10 +866,10 @@ async function runPreview(auto) {
   let timedOut = false;
 
   btn.disabled = true; lbl.textContent = 'Generating…'; spin.classList.add('visible');
-  viewport.setLoading(true, 'Building mesh…', '');
+  viewport.setLoading(true, 'Generating preview…', '');
   const coldStartTimer = setTimeout(() => {
     if (myGeneration === requestGeneration) {
-      viewport.setLoading(true, 'Building mesh…', COLD_START_HINT);
+      viewport.setLoading(true, 'Generating preview…', COLD_START_HINT);
     }
   }, COLD_START_DELAY_MS);
   const giveUpTimer = setTimeout(() => {
