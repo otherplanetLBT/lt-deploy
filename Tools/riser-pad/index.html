@@ -284,19 +284,9 @@
     .viewport { flex: 1; position: relative; background: #0a0c14; overflow: hidden; min-width: 0; }
     #canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 
-    .loading-overlay {
-      position: absolute; inset: 0; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 16px;
-      background: rgba(10,12,20,0.88); z-index: 5;
-      opacity: 0; transition: opacity 0.25s; pointer-events: none;
-    }
-    .loading-overlay.visible { opacity: 1; pointer-events: all; }
-    .loading-ring {
-      width: 44px; height: 44px; border: 3px solid var(--border);
-      border-top-color: var(--accent); border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    .loading-msg { font-size: 0.85rem; color: var(--text-dim); }
+    /* .loading-overlay / .loading-ring / .loading-msg intentionally not
+       overridden here — shared.css is the single source of truth so this
+       overlay stays visually identical to pivot-cup's. */
 
     .viewport-hint {
       position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);

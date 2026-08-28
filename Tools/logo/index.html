@@ -180,6 +180,12 @@
     padding: 5px 8px; border-radius: 4px; width: 100%;
   }
 
+  .num-input {
+    background: var(--surface-2); color: var(--text-mid);
+    border: 1px solid var(--border-mid); font-family: var(--mono);
+    font-size: 0.7rem; padding: 5px 8px; border-radius: 4px; width: 100%;
+  }
+
   /* Export status */
   #exportStatus { font-size: 0.65rem; color: var(--text-dim); min-height: 16px; }
 
@@ -496,6 +502,53 @@
           </div>
 
         </div>
+
+        <div class="divider"></div>
+
+        <!-- Logo Asset export — reducer/baker/emitter preset workflow.
+             See Logo_Animation.md § Export capability. -->
+        <div>
+          <div class="section-label">Logo Asset Export</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div>
+              <div class="control-header" style="margin-bottom:6px">
+                <span class="control-name">Preset</span>
+                <span class="control-val" id="presetDirtyBadge" style="display:none;color:var(--accent-bright)">● unsaved</span>
+              </div>
+              <select id="presetSelect"></select>
+            </div>
+            <div class="control-row">
+              <div class="control-header"><span class="control-name">Color mode</span></div>
+              <select id="exportColorMode" class="num-input">
+                <option value="vars">Vars — theme via site (--logo-mark)</option>
+                <option value="literal">Literal — bake exact hex colors</option>
+              </select>
+              <div id="colorModeNote" style="font-size:0.6rem;color:var(--text-faint);margin-top:5px;line-height:1.4;"></div>
+            </div>
+            <div class="control-row">
+              <div class="control-header"><span class="control-name">Export width</span></div>
+              <input type="number" id="exportWidth" class="num-input" min="16" max="1080" step="1" value="96">
+            </div>
+            <div class="control-row">
+              <div class="control-header"><span class="control-name">Simplify (epsilon)</span></div>
+              <input type="number" id="exportEpsilon" class="num-input" min="0" max="8" step="0.5" value="1.0">
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-secondary" id="btnSavePreset">💾 Save to Preset</button>
+              <button class="btn btn-secondary" id="btnExportPresets">⬇ Export Presets</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="control-header" style="margin-bottom:2px"><span class="control-name">Preview (emitted string)</span></div>
+            <div id="assetPreviewFrame" style="border:1px solid var(--border-mid);border-radius:4px;overflow:hidden;"></div>
+            <div class="btn-row">
+              <button class="btn btn-secondary" id="btnCopyPreview">⧉ Copy Preview Block</button>
+              <button class="btn btn-secondary" id="btnExportShipJSON">⬇ Export Ship JSON</button>
+            </div>
+            <div id="presetStatus" style="font-size:0.65rem;color:var(--text-dim);min-height:16px;"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -749,6 +802,323 @@
     return `translate(${dx}px,${dy}px) translate(${CX}px,${CY}px) rotate(${sa + 180}deg) translate(-${CX}px,-${CY}px)`;
   }
 
+  // ── logo-asset ────────────────────────────────────────────────────────
+  // Reducer, keyframe baker, and asset emitter for exporting the Lab's
+  // animated mark to consumers (loader, future hero replacement, etc).
+  // See Logo_Animation.md § Export capability for the design and
+  // § Known traps before touching this. No UI of its own — driven by the
+  // Export panel below, or headlessly (pass `geo` to emitAsset directly)
+  // after a splice-extract.
+  /* LOGO-ASSET:BEGIN */
+  const LogoAsset = (function() {
+
+    // -- reducePath: Douglas-Peucker + precision trim. Arc/curve paths
+    // (the silhouette) pass through untouched — DP over a polyline
+    // approximation of an arc is the wrong tool, and it's 149 chars already. --
+    function reducePath(d, epsilon) {
+      if (/[AaCcSsQqTt]/.test(d)) return d.trim();
+      const subpaths = d.trim().split(/(?=M)/).filter(s => s.trim());
+      const precision = epsilon >= 2 ? 1 : 2;
+      const fmt = n => {
+        let s = n.toFixed(precision);
+        if (s === '-0') s = '0';
+        return s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+      };
+      return subpaths.map(sp => {
+        const closed = /Z\s*$/i.test(sp.trim());
+        const body = sp.replace(/Z\s*$/i, '').trim();
+        const points = body.split(/(?=[ML])/).map(t => t.trim()).filter(Boolean).map(tok => {
+          const nums = tok.slice(1).trim().split(/[\s,]+/).map(Number);
+          return { x: nums[0], y: nums[1] };
+        });
+        const simplified = rdp(points, epsilon);
+        let s = `M ${fmt(simplified[0].x)},${fmt(simplified[0].y)}`;
+        for (let i = 1; i < simplified.length; i++) s += ` L ${fmt(simplified[i].x)},${fmt(simplified[i].y)}`;
+        if (closed) s += ' Z';
+        return s;
+      }).join(' ');
+    }
+
+    function rdp(points, epsilon) {
+      if (points.length < 3) return points;
+      let maxDist = 0, index = 0;
+      const start = points[0], end = points[points.length - 1];
+      for (let i = 1; i < points.length - 1; i++) {
+        const dist = perpDist(points[i], start, end);
+        if (dist > maxDist) { maxDist = dist; index = i; }
+      }
+      if (maxDist > epsilon) {
+        const left = rdp(points.slice(0, index + 1), epsilon);
+        const right = rdp(points.slice(index), epsilon);
+        return left.slice(0, -1).concat(right);
+      }
+      return [start, end];
+    }
+
+    function perpDist(p, a, b) {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+      let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    }
+
+    // -- bakeKeyframes: samples the page's OWN gearDegPerSec/wobbleAngle/
+    // getRumble — never a copy — by temporarily pointing the live P at the
+    // preset's params, sampling, then restoring P. That makes Known trap
+    // #1 (integration drift between baker and live sim) structurally
+    // impossible instead of just carefully avoided: there is only one
+    // implementation. Gear and wobble get separate @keyframes on separate
+    // elements (trap #2 — their periods are unrelated; forcing a common
+    // one blows up the keyframe count). Gear's cumulative angle is
+    // rescaled so one gearCycle lands on an exact multiple of 360° —
+    // without that, the CSS animation snaps at every loop boundary
+    // (rotate() at 100% must be congruent mod 360 to rotate() at 0% for
+    // an infinite loop to read as continuous). The correction is a few
+    // percent uniform speed change at most; imperceptible at mark scale,
+    // recorded in the emitted provenance comment for anyone who wants to
+    // check it. Rumble/slant get a best-effort combined single-period
+    // track with no anti-seam correction — unused by both seed presets
+    // (rumbleAmt: 0), so left simple; revisit if a rumble preset ships.
+    function withPresetP(presetP, fn) {
+      const saved = Object.assign({}, P);
+      Object.assign(P, presetP);
+      try { return fn(); } finally { Object.assign(P, saved); }
+    }
+
+    function bakeGearTrack(presetP, steps) {
+      return withPresetP(presetP, () => {
+        const dt = 1 / 120;
+        const cycle = P.gearCycle;
+        const sampleDt = cycle / steps;
+        const samples = [{ t: 0, ga: 0 }];
+        let ga = 0, nextIdx = 1;
+        for (let t = 0; t < cycle; t += dt) {
+          const step = Math.min(dt, cycle - t);
+          ga += gearDegPerSec(t) * step;
+          const tNext = t + step;
+          while (nextIdx <= steps && tNext >= nextIdx * sampleDt - 1e-9) {
+            samples.push({ t: nextIdx * sampleDt, ga });
+            nextIdx++;
+          }
+        }
+        while (samples.length <= steps) samples.push({ t: cycle, ga });
+        const rawTotal = samples[samples.length - 1].ga;
+        const target = rawTotal === 0 ? 360 : (Math.round(rawTotal / 360) * 360 || 360);
+        const scale = target / rawTotal;
+        return {
+          duration: cycle, rawTotalDeg: rawTotal, scaledTotalDeg: target,
+          frames: samples.map(s => ({ pct: (s.t / cycle) * 100, deg: s.ga * scale })),
+        };
+      });
+    }
+
+    function bakeWobbleTrack(presetP, steps) {
+      if (presetP.wobbleAmt === 0) return null;
+      return withPresetP(presetP, () => {
+        const period = 6 / P.wobbleSpeed;
+        const frames = [];
+        for (let i = 0; i <= steps; i++) {
+          const t = (period * i) / steps;
+          frames.push({ pct: (i / steps) * 100, deg: wobbleAngle(t) });
+        }
+        return { duration: period, frames };
+      });
+    }
+
+    function bakeRumbleTrack(presetP, steps) {
+      if (presetP.rumbleAmt === 0) return null;
+      return withPresetP(presetP, () => {
+        const cycle = P.gearCycle;
+        const frames = [];
+        for (let i = 0; i <= steps; i++) {
+          const t = (cycle * i) / steps;
+          const speedFactor = (gearDegPerSec(t) / 360) / 5;
+          const { dx, dy } = getRumble(t, speedFactor);
+          frames.push({ pct: (i / steps) * 100, dx, dy });
+        }
+        return { duration: cycle, frames };
+      });
+    }
+
+    function fmtDeg(n) { return (Math.round(n * 100) / 100) + 'deg'; }
+    function fmtPx(n) { return (Math.round(n * 100) / 100) + 'px'; }
+    function fmtPct(n) { return (Math.round(n * 1000) / 1000) + '%'; }
+
+    function keyframesCSS(name, frames, toTransform) {
+      const body = frames.map(f => `  ${fmtPct(f.pct)} { transform: ${toTransform(f)}; }`).join('\n');
+      return `@keyframes ${name} {\n${body}\n}`;
+    }
+
+    function bakeKeyframes(presetP, opts) {
+      opts = opts || {};
+      const steps = opts.steps || 40;
+      const prefix = opts.prefix || 'lm';
+      const gear = bakeGearTrack(presetP, steps);
+      const wobble = bakeWobbleTrack(presetP, steps);
+      const rumble = bakeRumbleTrack(presetP, steps);
+      let css = keyframesCSS(`${prefix}-gear-spin`, gear.frames, f => `rotate(${fmtDeg(f.deg)})`);
+      const tracks = { gear: { name: `${prefix}-gear-spin`, duration: gear.duration } };
+      if (wobble) {
+        css += '\n\n' + keyframesCSS(`${prefix}-wobble-spin`, wobble.frames, f => `rotate(${fmtDeg(f.deg)})`);
+        tracks.wobble = { name: `${prefix}-wobble-spin`, duration: wobble.duration };
+      }
+      if (rumble) {
+        css += '\n\n' + keyframesCSS(`${prefix}-rumble`, rumble.frames, f => `translate(${fmtPx(f.dx)}, ${fmtPx(f.dy)})`);
+        tracks.rumble = { name: `${prefix}-rumble`, duration: rumble.duration };
+      }
+      return { css, tracks, gearRawTotalDeg: gear.rawTotalDeg, gearScaledTotalDeg: gear.scaledTotalDeg };
+    }
+
+    // -- emitAsset: SVG markup + CSS block for one preset. Reads current
+    // geometry from the live DOM (gearPaths/frontPaths/slantBack/silPath,
+    // declared above) unless `geo` is passed explicitly — that's the
+    // headless escape hatch. Structure and z-order mirror the live DOM
+    // exactly: back-to-front is [silhouette (optional), slant-front's 3
+    // paths, gear, slant-back's 1 path] — see Logo_Animation.md's
+    // "Logo is upside-down" note for why the ring piece named "front"
+    // renders behind the gear and "back" renders in front. Left as-is
+    // intentionally; this emitter reproduces the visual result, not the
+    // naming. --
+    function readGeo() {
+      return [
+        silPath.getAttribute('d'),
+        frontPaths[0].getAttribute('d'),
+        frontPaths[1].getAttribute('d'),
+        frontPaths[2].getAttribute('d'),
+        gearPaths[0].getAttribute('d'),
+        gearPaths[1].getAttribute('d'),
+        slantBack.querySelector('path').getAttribute('d'),
+      ];
+    }
+
+    function emitAsset(preset, geo) {
+      geo = geo || readGeo();
+      const Pp = preset.P, Cc = preset.C, out = preset.output || {};
+      const epsilon = out.epsilon != null ? out.epsilon : 1.0;
+      const vb = out.viewBox || [0, 0, 540, 340];
+      const width = out.width || vb[2];
+      const height = Math.round(((width * vb[3]) / vb[2]) * 100) / 100;
+      const colorMode = out.colorMode || 'vars';
+      const steps = out.steps || 40;
+
+      const [dSil, dRingA, dSwoosh1, dSwoosh2, dGearFill, dGearBody, dRingB] =
+        geo.map(d => reducePath(d, epsilon));
+
+      const showBorder = out.borderWidth > 0 && !Cc.border.transparent;
+      const fillOf = (role, isOccluder) => {
+        // Transparency is an independent axis from color choice — it must
+        // win regardless of colorMode. Bug found 2026-08-27: this used to
+        // check colorMode first, so a vars-mode preset (both seed presets)
+        // silently ignored every Transparent toggle except Border's (which
+        // is gated separately, by whether the border group is emitted at
+        // all) — a part set transparent still rendered solid via
+        // var(--logo-mark). Fixed by checking transparency first, always.
+        if (role.transparent) return 'none';
+        if (colorMode === 'vars') return isOccluder ? 'var(--logo-occluder)' : 'var(--logo-mark)';
+        return role.hex;
+      };
+      const strokePath = (cls, d, role) =>
+        `<path class="${cls}" d="${d}" fill="${fillOf(role)}" stroke="${fillOf(role)}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+
+      const baked = bakeKeyframes(Pp, { steps, prefix: 'lm' });
+      const wobbleAnimDecl = baked.tracks.wobble
+        ? `\n  animation: ${baked.tracks.wobble.name} ${baked.tracks.wobble.duration}s linear infinite;` : '';
+      const gearAnimDecl = `${baked.tracks.gear.name} ${baked.tracks.gear.duration}s linear infinite`;
+      const rumbleAnimRule = baked.tracks.rumble
+        ? `.lm-slant { animation: ${baked.tracks.rumble.name} ${baked.tracks.rumble.duration}s linear infinite; } /* best-effort, no anti-seam correction — see bakeRumbleTrack */\n` : '';
+
+      const borderGroup = showBorder
+        ? `  <g class="lm-slant"><g class="lm-wobble">
+    <path class="lm-border" d="${dSil}" fill="${fillOf(Cc.border)}" stroke="${fillOf(Cc.border)}" stroke-width="${(out.borderWidth || 20) * 2}" stroke-linejoin="round" stroke-linecap="round"/>
+  </g></g>\n`
+        : '';
+
+      const svg = `<svg class="lm" viewBox="${vb.join(' ')}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" overflow="visible">
+${borderGroup}  <g class="lm-slant"><g class="lm-wobble">
+    ${strokePath('lm-ring', dRingA, Cc.ring)}
+    ${strokePath('lm-swoosh', dSwoosh1, Cc.swoosh)}
+    ${strokePath('lm-swoosh', dSwoosh2, Cc.swoosh)}
+  </g></g>
+  <g class="lm-gear">
+    <path class="lm-gear-fill" d="${dGearFill}" fill="${fillOf(Cc.gearFill, true)}"/>
+    <path class="lm-gear-body" d="${dGearBody}" fill-rule="evenodd" fill="${fillOf(Cc.gear)}" stroke="${fillOf(Cc.gear)}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g class="lm-slant"><g class="lm-wobble">
+    ${strokePath('lm-ring', dRingB, Cc.ring)}
+  </g></g>
+</svg>`;
+
+      const css = `.lm-slant {
+  transform-origin: ${CX}px ${CY}px;
+  transform: rotate(${Pp.slant + 180}deg);
+}
+${rumbleAnimRule}.lm-wobble {
+  transform-origin: ${CX}px ${CY}px;${wobbleAnimDecl}
+}
+.lm-gear {
+  transform-origin: ${CX}px ${CY}px;
+  animation: ${gearAnimDecl};
+}
+
+${baked.css}`;
+
+      const provenance = `<!-- logo-asset export | preset: ${preset.name} | generated: ${new Date().toISOString()}
+     P: ${JSON.stringify(Pp)}
+     C: ${JSON.stringify(Cc)}
+     output: ${JSON.stringify(out)}
+     gear: ${baked.gearRawTotalDeg.toFixed(2)}deg/cycle raw -> ${baked.gearScaledTotalDeg}deg baked (loop-seam correction)
+     Round-trip: paste P/C/output back into a Lab preset to reproduce. -->`;
+
+      return { svg, css, provenance, full: `${provenance}\n${svg}\n<style>\n${css}\n</style>` };
+    }
+
+    return { reducePath, bakeKeyframes, emitAsset, readGeo };
+  })();
+  /* LOGO-ASSET:END */
+
+  // ── Presets ───────────────────────────────────────────────────────────
+  // Storage is this literal, spliced between the markers — deliberately no
+  // localStorage. See Logo_Animation.md § Export capability "Storage" for
+  // why: browser-local scratch state next to a file-based source of truth
+  // is the exact divergence shape this project has been burned by twice.
+  // Edits made in the UI live in memory for the session; "Export Presets"
+  // downloads the updated literal for hand-splicing back between these
+  // markers (same shape as the deploy `.bat` step).
+  /* PRESETS:BEGIN */
+  const PRESETS = {
+    hero: {
+      name: 'hero',
+      P: { gearMin: 0.5, gearMax: 2, gearCycle: 3, dwellMin: 0, dwellMax: 0,
+           wobbleSpeed: 1, wobbleAmt: 4, rumbleAmt: 0, rumbleFreq: 8, slant: -20 },
+      C: {
+        ring:     { hex: '#000000', transparent: false },
+        swoosh:   { hex: '#000000', transparent: false },
+        gear:     { hex: '#000000', transparent: false },
+        gearFill: { hex: '#ffffff', transparent: false },
+        border:   { hex: '#ffffff', transparent: false },
+      },
+      output: { viewBox: [0, 0, 540, 340], width: 540, epsilon: 1.0, profile: 'hero', colorMode: 'literal', format: 'css', borderWidth: 15 },
+    },
+    loader: {
+      name: 'loader',
+      P: { gearMin: 0.5, gearMax: 2, gearCycle: 3, dwellMin: 0, dwellMax: 0,
+           wobbleSpeed: 1, wobbleAmt: 1.5, rumbleAmt: 0, rumbleFreq: 8, slant: -20 },
+      C: {
+        ring:     { hex: '#000000', transparent: false },
+        swoosh:   { hex: '#000000', transparent: false },
+        gear:     { hex: '#000000', transparent: false },
+        gearFill: { hex: '#ffffff', transparent: false },
+        border:   { hex: '#ffffff', transparent: false },
+      },
+      output: { viewBox: [0, 0, 540, 340], width: 96, epsilon: 1.0, profile: 'loader', colorMode: 'literal', format: 'css', borderWidth: 15 },
+    },
+  };
+  /* PRESETS:END */
+
+
+
   function frame(ts) {
     if (t0 === null || resumePending) {
       t0 = resumePending ? ts - simT * 1000 : ts;
@@ -998,6 +1368,225 @@
       btn.disabled = false;
     }, 'image/png');
   });
+
+
+  // ── Preset UI + Export preview panel ─────────────────────────────────
+  // The preview renders the emitted STRING via iframe srcdoc, not the live
+  // SVG scaled down — rendering the live SVG here would hide simplification
+  // loss and keyframe-baking error, which is exactly the "judged something
+  // that wasn't what shipped" mistake that cost session 33. See
+  // Logo_Animation.md § Known traps #3.
+  let currentPresetName = null;
+  let lastEmitted = null;
+
+  function presetSnapshot() {
+    return {
+      P: { ...P },
+      C: JSON.parse(JSON.stringify(C)),
+      output: {
+        width: parseFloat(document.getElementById('exportWidth').value),
+        epsilon: parseFloat(document.getElementById('exportEpsilon').value),
+        colorMode: document.getElementById('exportColorMode').value,
+        borderWidth: parseInt(document.getElementById('borderWidth').value, 10) || 0,
+      },
+    };
+  }
+  function snapshotsEqual(a, b) {
+    const bOutput = {
+      width: b.output.width, epsilon: b.output.epsilon,
+      colorMode: b.output.colorMode, borderWidth: b.output.borderWidth || 0,
+    };
+    return JSON.stringify(a.P) === JSON.stringify(b.P)
+      && JSON.stringify(a.C) === JSON.stringify(b.C)
+      && JSON.stringify(a.output) === JSON.stringify(bOutput);
+  }
+  function updateColorModeNote() {
+    const mode = document.getElementById('exportColorMode').value;
+    const note = document.getElementById('colorModeNote');
+    note.innerHTML = mode === 'vars'
+      ? 'Colors panel hex is ignored — the shipped page\'s own --logo-mark / --logo-occluder decide color. <strong>Transparent toggles still apply.</strong>'
+      : 'Every Colors panel hex value bakes into the export exactly as shown — no site-side theming. Change color here, not in shared.css.';
+  }
+
+  function syncColorUI() {
+    [['ring', 'ringColor', 'ringTransp'], ['swoosh', 'swooshColor', 'swooshTransp'],
+     ['gear', 'gearColor', 'gearTransp'], ['gearFill', 'gearFillColor', 'gearFillTransp'],
+     ['border', 'borderColor', 'borderTransp']].forEach(([key, inputId, btnId]) => {
+      const input = document.getElementById(inputId);
+      const btn = document.getElementById(btnId);
+      input.value = C[key].hex;
+      input.disabled = C[key].transparent;
+      btn.classList.toggle('on', C[key].transparent);
+    });
+  }
+
+  function fireInput(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = value;
+    el.dispatchEvent(new Event('input'));
+  }
+
+  function updateDirtyIndicator() {
+    const badge = document.getElementById('presetDirtyBadge');
+    if (!currentPresetName) { badge.style.display = 'none'; return; }
+    const dirty = !snapshotsEqual(presetSnapshot(), PRESETS[currentPresetName]);
+    badge.style.display = dirty ? '' : 'none';
+  }
+
+  function currentPresetConfig() {
+    const base = currentPresetName ? PRESETS[currentPresetName] : PRESETS.loader;
+    return {
+      name: base.name,
+      P: { ...P },
+      C: JSON.parse(JSON.stringify(C)),
+      output: {
+        ...base.output,
+        width: parseFloat(document.getElementById('exportWidth').value) || base.output.width,
+        epsilon: parseFloat(document.getElementById('exportEpsilon').value),
+        colorMode: document.getElementById('exportColorMode').value,
+        borderWidth: parseInt(document.getElementById('borderWidth').value, 10) || 0,
+      },
+    };
+  }
+
+  function updatePreviewPanel() {
+    let asset;
+    try {
+      asset = LogoAsset.emitAsset(currentPresetConfig());
+    } catch (e) {
+      document.getElementById('presetStatus').textContent = 'Preview error: ' + e.message;
+      return;
+    }
+    lastEmitted = asset;
+    const host = document.getElementById('assetPreviewFrame');
+    host.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.title = 'Export preview — renders the emitted string, not the live SVG';
+    iframe.style.cssText = 'width:100%;height:140px;border:0;display:block;background:#07091a;';
+    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>
+      html,body{margin:0;height:100%;background:#07091a;display:flex;
+        align-items:center;justify-content:center;overflow:hidden;}
+      .lm{--logo-mark:#e8eaf0;--logo-occluder:#07091a;max-width:100%;max-height:112px;width:auto;height:auto;}
+      ${asset.css}
+    </style></head><body>
+      <div>${asset.svg}</div>
+    </body></html>`;
+    host.appendChild(iframe);
+  }
+
+  function loadPreset(name) {
+    const preset = PRESETS[name];
+    if (!preset) return;
+    currentPresetName = name;
+
+    Object.keys(preset.P).forEach(k => { P[k] = preset.P[k]; });
+    ['gearMin', 'gearMax', 'gearCycle', 'dwellMin', 'dwellMax', 'wobbleSpeed', 'wobbleAmt', 'rumbleAmt', 'rumbleFreq']
+      .forEach(id => fireInput(id, preset.P[id]));
+    fireInput('slantAngle', preset.P.slant);
+
+    Object.keys(preset.C).forEach(key => {
+      C[key].hex = preset.C[key].hex;
+      C[key].transparent = preset.C[key].transparent;
+    });
+    syncColorUI();
+    applyColors();
+
+    fireInput('borderWidth', preset.output.borderWidth || 0);
+    document.getElementById('exportWidth').value = preset.output.width;
+    document.getElementById('exportEpsilon').value = preset.output.epsilon;
+    document.getElementById('exportColorMode').value = preset.output.colorMode || 'vars';
+    updateColorModeNote();
+
+    updateDirtyIndicator();
+    updatePreviewPanel();
+  }
+
+  function saveCurrentToPreset() {
+    if (!currentPresetName) return;
+    const preset = PRESETS[currentPresetName];
+    preset.P = { ...P };
+    preset.C = JSON.parse(JSON.stringify(C));
+    preset.output.width = parseFloat(document.getElementById('exportWidth').value) || preset.output.width;
+    preset.output.epsilon = parseFloat(document.getElementById('exportEpsilon').value);
+    preset.output.colorMode = document.getElementById('exportColorMode').value;
+    preset.output.borderWidth = parseInt(document.getElementById('borderWidth').value, 10) || 0;
+    updateDirtyIndicator();
+    updatePreviewPanel();
+    const status = document.getElementById('presetStatus');
+    status.textContent = `Saved "${currentPresetName}" (session only — Export Presets to persist to source).`;
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  }
+
+  function exportPresetsFile() {
+    const literal = 'const PRESETS = ' + JSON.stringify(PRESETS, null, 2) + ';\n';
+    const blob = new Blob([literal], { type: 'text/javascript' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'presets_export.js',
+    });
+    a.click();
+  }
+
+  function populatePresetSelect() {
+    const sel = document.getElementById('presetSelect');
+    sel.innerHTML = '';
+    Object.keys(PRESETS).forEach(key => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = PRESETS[key].name;
+      sel.appendChild(opt);
+    });
+  }
+
+  populatePresetSelect();
+  document.getElementById('presetSelect').addEventListener('change', e => loadPreset(e.target.value));
+  document.getElementById('btnSavePreset').addEventListener('click', saveCurrentToPreset);
+  document.getElementById('btnExportPresets').addEventListener('click', exportPresetsFile);
+  document.getElementById('btnCopyPreview').addEventListener('click', async () => {
+    if (!lastEmitted) return;
+    const status = document.getElementById('presetStatus');
+    try {
+      await navigator.clipboard.writeText(lastEmitted.full);
+      status.textContent = 'Copied.';
+    } catch (e) {
+      status.textContent = 'Clipboard blocked — see console.';
+      console.log(lastEmitted.full);
+    }
+    setTimeout(() => { status.textContent = ''; }, 1500);
+  });
+  document.getElementById('btnExportShipJSON').addEventListener('click', () => {
+    if (!lastEmitted) return;
+    // Ship JSON — consumed by apply_logo_asset.py to splice {svg, css} between
+    // the LOGO-ASSET markers in deploy/Tools/shared.css and shared.js. Separate
+    // from "Export Presets" (which round-trips PRESETS itself back into this
+    // file) — this one is the consumer-facing artifact.
+    const payload = { name: currentPresetName, svg: lastEmitted.svg, css: lastEmitted.css, provenance: lastEmitted.provenance };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: `logo_asset_${currentPresetName || 'export'}.json`,
+    });
+    a.click();
+  });
+
+  ['exportWidth', 'exportEpsilon'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => { updateDirtyIndicator(); updatePreviewPanel(); });
+  });
+  document.getElementById('exportColorMode').addEventListener('change', () => {
+    updateColorModeNote(); updateDirtyIndicator(); updatePreviewPanel();
+  });
+  // Live tweaks anywhere in Gear/Motion/View/Colors should keep the dirty
+  // badge and preview in sync — registered after the sliders' own
+  // listeners (this block runs at the end of the script) so P/C are
+  // already updated by the time these fire.
+  document.querySelectorAll(
+    '#gearMin,#gearMax,#gearCycle,#dwellMin,#dwellMax,#wobbleSpeed,#wobbleAmt,#rumbleAmt,#rumbleFreq,#slantAngle,#borderWidth'
+  ).forEach(el => el.addEventListener('input', () => { updateDirtyIndicator(); updatePreviewPanel(); }));
+  document.querySelectorAll('input[type=color]').forEach(el =>
+    el.addEventListener('input', () => { updateDirtyIndicator(); updatePreviewPanel(); }));
+  document.querySelectorAll('.transp-btn').forEach(el =>
+    el.addEventListener('click', () => { updateDirtyIndicator(); updatePreviewPanel(); }));
+
+  loadPreset('loader'); // default to the mark currently being built out
 
 </script>
 </body>

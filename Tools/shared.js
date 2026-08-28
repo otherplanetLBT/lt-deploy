@@ -22,6 +22,45 @@
   const MM_PER_IN = 25.4;
 
   // ============================================================================
+  // Logo mark (loading-overlay loader)
+  // ============================================================================
+  // Shipped from the Logo Animation Lab's export capability via
+  // apply_logo_asset.py — see Logo Animation/Logo_Animation.md § Export
+  // capability. LOGO_MARK_SVG is injected into every `.loading-ring` on
+  // DOMContentLoaded (see injectLoaderMark below); the matching .lm-* CSS
+  // (transforms + baked @keyframes) lives in shared.css between the same
+  // markers. Re-run apply_logo_asset.py to update both together — never
+  // hand-edit between the markers, it will be overwritten on the next run.
+  /* LOGO-ASSET:BEGIN */
+  // Shipped from Logo Animation Lab preset "loader" via apply_logo_asset.py. Re-run to update.
+  const LOGO_MARK_SVG = `<svg class="lm" viewBox="0 0 540 340" width="96" height="60.44" xmlns="http://www.w3.org/2000/svg" overflow="visible">
+  <g class="lm-slant"><g class="lm-wobble">
+    <path class="lm-border" d="M 415.2,216.2 A 242.68,57.67 0 0 0 415.2,123.8 A 152.40,152.40 0 0 0 124.8,123.8 A 242.68,57.67 0 0 0 124.8,216.2 A 152.40,152.40 0 0 0 415.2,216.2 Z" fill="#ffffff" stroke="#ffffff" stroke-width="32" stroke-linejoin="round" stroke-linecap="round"/>
+  </g></g>
+  <g class="lm-slant"><g class="lm-wobble">
+    <path class="lm-ring" d="M 513,170 L 435.93,170 L 433.67,176.74 L 425.07,184.57 L 410.39,191.82 L 390.2,198.22 L 336.65,207.49 L 272.74,210.94 L 208.41,208.02 L 153.64,199.19 L 132.61,192.96 L 116.97,185.82 L 107.33,178.07 L 104.07,170 L 27,170 L 28.2,175.72 L 31.77,181.38 L 45.89,192.32 L 68.8,202.38 L 99.6,211.17 L 137.09,218.34 L 172.39,222.88 L 218.17,226.42 L 265.98,227.74 L 313.95,226.79 L 360.2,223.62 L 402.91,218.34 L 440.4,211.17 L 471.2,202.38 L 494.11,192.32 L 508.23,181.38 L 511.8,175.72 L 513,170 Z" fill="#000000" stroke="#000000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    <path class="lm-swoosh" d="M 415.41,123.73 L 352.86,115.72 L 343.81,100.13 L 332.6,86.02 L 321.78,75.61 L 307.25,64.95 L 291.33,56.52 L 277.24,51.31 L 259.66,47.37 L 241.69,46.02 L 223.72,47.28 L 206.11,51.14 L 189.26,57.51 L 173.5,66.25 L 159.18,77.19 L 146.6,90.08 L 136.01,104.67 L 126.5,123.4 L 124.59,123.73 L 133.78,101.23 L 146.43,80.46 L 162.22,61.97 L 180.75,46.23 L 201.54,33.62 L 224.07,24.48 L 243.76,19.68 L 267.97,17.42 L 292.23,19.03 L 315.93,24.48 L 338.46,33.62 L 359.25,46.23 L 377.78,61.97 L 393.57,80.46 L 406.22,101.23 L 415.41,123.73 Z" fill="#000000" stroke="#000000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    <path class="lm-swoosh" d="M 124.59,216.26 L 133.78,238.77 L 146.43,259.54 L 162.22,278.03 L 180.75,293.77 L 201.54,306.38 L 224.07,315.52 L 243.76,320.32 L 267.97,322.58 L 292.23,320.97 L 315.93,315.52 L 338.46,306.38 L 359.25,293.77 L 377.78,278.03 L 393.57,259.54 L 406.22,238.77 L 415.41,216.26 L 413.5,216.6 L 403.99,235.34 L 393.4,249.92 L 380.82,262.81 L 366.5,273.75 L 350.74,282.49 L 333.89,288.86 L 316.29,292.72 L 298.31,293.98 L 280.34,292.63 L 262.76,288.69 L 248.67,283.48 L 232.75,275.05 L 218.22,264.39 L 207.4,253.98 L 196.19,239.87 L 187.14,224.28 L 124.59,216.26 Z" fill="#000000" stroke="#000000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  </g></g>
+  <g class="lm-gear">
+    <path class="lm-gear-fill" d="M 212.96,290.19 L 230.31,268.16 L 254.03,274.67 L 280.25,275.38 L 290.65,301.42 L 345.56,279.49 L 335.17,253.45 L 353.68,234.87 L 366.39,213.81 L 394.14,217.82 L 402.6,159.3 L 374.86,155.29 L 368.02,129.97 L 356.14,108.43 L 373.49,86.4 L 327.04,49.81 L 309.69,71.84 L 285.97,65.33 L 259.75,64.62 L 249.35,38.58 L 194.44,60.51 L 204.83,86.55 L 186.32,105.13 L 173.61,126.19 L 145.86,122.17 L 137.4,180.7 L 165.15,184.71 L 171.98,210.03 L 183.86,231.57 L 166.51,253.6 Z" fill="#ffffff"/>
+    <path class="lm-gear-body" d="M 226.88,254.02 L 211.05,274.11 L 182.58,251.69 L 198.41,231.59 L 189,218.55 L 181.93,204.09 L 177.84,190.61 L 175.68,174.67 L 150.36,171.01 L 155.55,135.14 L 180.87,138.8 L 186.5,125.89 L 195.2,112.36 L 206.07,100.49 L 218.8,90.65 L 209.31,66.89 L 242.97,53.45 L 252.45,77.21 L 268.46,75.58 L 282.52,76.4 L 298.23,79.88 L 313.12,85.98 L 328.95,65.89 L 357.42,88.31 L 341.59,108.41 L 351,121.45 L 358.07,135.91 L 362.16,149.39 L 364.32,165.33 L 389.64,168.99 L 384.45,204.86 L 359.13,201.2 L 353.5,214.11 L 344.8,227.64 L 333.93,239.51 L 321.2,249.35 L 330.69,273.11 L 297.04,286.55 L 287.55,262.79 L 271.54,264.43 L 257.48,263.6 L 241.77,260.12 L 226.88,254.02 Z M 212.96,290.19 L 230.31,268.16 L 254.03,274.67 L 280.25,275.38 L 290.65,301.42 L 345.56,279.49 L 335.17,253.45 L 353.68,234.87 L 366.39,213.81 L 394.14,217.82 L 402.6,159.3 L 374.86,155.29 L 368.02,129.97 L 356.14,108.43 L 373.49,86.4 L 327.04,49.81 L 309.69,71.84 L 285.97,65.33 L 259.75,64.62 L 249.35,38.58 L 194.44,60.51 L 204.83,86.55 L 186.32,105.13 L 173.61,126.19 L 145.86,122.17 L 137.4,180.7 L 165.15,184.71 L 171.98,210.03 L 183.86,231.57 L 166.51,253.6 Z" fill-rule="evenodd" fill="#000000" stroke="#000000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g class="lm-slant"><g class="lm-wobble">
+    <path class="lm-ring" d="M 435.93,170 L 513,170 L 511.8,164.28 L 508.23,158.62 L 494.11,147.68 L 471.2,137.62 L 440.4,128.83 L 402.91,121.66 L 367.61,117.12 L 321.83,113.58 L 274.02,112.26 L 226.05,113.21 L 179.8,116.38 L 137.09,121.66 L 99.6,128.83 L 68.8,137.62 L 45.89,147.68 L 31.77,158.62 L 28.2,164.28 L 27,170 L 104.07,170 L 106.33,163.26 L 114.93,155.43 L 129.61,148.18 L 149.8,141.78 L 203.35,132.51 L 267.26,129.06 L 331.59,131.98 L 386.36,140.81 L 407.39,147.04 L 423.04,154.18 L 432.67,161.93 L 435.93,170 Z" fill="#000000" stroke="#000000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  </g></g>
+</svg>`;
+  /* LOGO-ASSET:END */
+
+  function injectLoaderMark() {
+    if (!LOGO_MARK_SVG) return;
+    document.querySelectorAll('.loading-ring').forEach(el => {
+      el.innerHTML = LOGO_MARK_SVG;
+    });
+  }
+
+
+  // ============================================================================
   // Starfield
   // ============================================================================
   // Static cosmos: stars are placed once, then breathe via a sinusoidal alpha
@@ -947,6 +986,7 @@
   function autoInit() {
     initTooltips();
     pingApi();
+    injectLoaderMark();
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', autoInit, { once: true });

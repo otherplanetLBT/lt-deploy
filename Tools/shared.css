@@ -30,6 +30,12 @@
   --border-mid:  rgba(255, 255, 255, 0.12);
   --border-dim:  rgba(255, 255, 255, 0.06);
 
+  /* Logo Animation Lab export — consumed by the emitted .lm-* mark CSS
+     (colorMode: 'vars'). Light mark on the navy loading-overlay backdrop,
+     occluder matches that backdrop so the gear's cutout reads as a hole. */
+  --logo-mark:      var(--text);
+  --logo-occluder:  var(--navy);
+
   /* Surfaces (tool sidebars, cards) — bluer than --navy so the foreground
      palette reads as "lit room over deep space" rather than a single flat
      dark. Top nav stays on --navy itself for the deeper backdrop feel. */
@@ -530,15 +536,121 @@ canvas.starfield-nav {
   opacity: 0; transition: opacity 0.25s; pointer-events: none;
 }
 .loading-overlay.visible { opacity: 1; pointer-events: all; }
+/* Loader mark — the real animated brand mark, shipped from the Logo
+   Animation Lab's export capability (2026-08-27) rather than a hand
+   approximation. .loading-ring is now just a sizing/centering container;
+   shared.js injects the SVG (LOGO_MARK_SVG) into it on DOMContentLoaded.
+   Single source of truth stays in shared.css/shared.js only, no per-file
+   overrides — see Logo Animation/Logo_Animation.md § Export capability. */
 .loading-ring {
-  width: 40px; height: 40px;
-  border: 2px solid var(--border-mid);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.9s linear infinite;
+  width: 96px; height: 60px;
+  display: flex; align-items: center; justify-content: center;
 }
+/* LOGO-ASSET:BEGIN */
+  /* Shipped from Logo Animation Lab preset "loader" via apply_logo_asset.py. Re-run to update. */
+  .lm-slant {
+    transform-origin: 270px 170px;
+    transform: rotate(160deg);
+  }
+  .lm-wobble {
+    transform-origin: 270px 170px;
+    animation: lm-wobble-spin 10s linear infinite;
+  }
+  .lm-gear {
+    transform-origin: 270px 170px;
+    animation: lm-gear-spin 3s linear infinite;
+  }
+
+  @keyframes lm-gear-spin {
+    0% { transform: rotate(0deg); }
+    2.5% { transform: rotate(2.94deg); }
+    5% { transform: rotate(6.1deg); }
+    7.5% { transform: rotate(9.86deg); }
+    10% { transform: rotate(14.6deg); }
+    12.5% { transform: rotate(20.66deg); }
+    15% { transform: rotate(28.36deg); }
+    17.5% { transform: rotate(37.97deg); }
+    20% { transform: rotate(49.71deg); }
+    22.5% { transform: rotate(63.75deg); }
+    25% { transform: rotate(80.21deg); }
+    27.5% { transform: rotate(99.11deg); }
+    30% { transform: rotate(120.47deg); }
+    32.5% { transform: rotate(144.18deg); }
+    35% { transform: rotate(170.12deg); }
+    37.5% { transform: rotate(198.09deg); }
+    40% { transform: rotate(227.85deg); }
+    42.5% { transform: rotate(259.09deg); }
+    45% { transform: rotate(291.49deg); }
+    47.5% { transform: rotate(324.68deg); }
+    50% { transform: rotate(358.29deg); }
+    52.5% { transform: rotate(391.92deg); }
+    55% { transform: rotate(425.18deg); }
+    57.5% { transform: rotate(457.69deg); }
+    60% { transform: rotate(489.07deg); }
+    62.5% { transform: rotate(519.01deg); }
+    65% { transform: rotate(547.19deg); }
+    67.5% { transform: rotate(573.37deg); }
+    70% { transform: rotate(597.34deg); }
+    72.5% { transform: rotate(618.96deg); }
+    75% { transform: rotate(638.14deg); }
+    77.5% { transform: rotate(654.86deg); }
+    80% { transform: rotate(669.17deg); }
+    82.5% { transform: rotate(681.16deg); }
+    85% { transform: rotate(690.99deg); }
+    87.5% { transform: rotate(698.89deg); }
+    90% { transform: rotate(705.12deg); }
+    92.5% { transform: rotate(709.99deg); }
+    95% { transform: rotate(713.84deg); }
+    97.5% { transform: rotate(717.05deg); }
+    100% { transform: rotate(720deg); }
+  }
+
+  @keyframes lm-wobble-spin {
+    0% { transform: rotate(0deg); }
+    2.5% { transform: rotate(0.78deg); }
+    5% { transform: rotate(1.55deg); }
+    7.5% { transform: rotate(2.27deg); }
+    10% { transform: rotate(2.94deg); }
+    12.5% { transform: rotate(3.54deg); }
+    15% { transform: rotate(4.05deg); }
+    17.5% { transform: rotate(4.46deg); }
+    20% { transform: rotate(4.76deg); }
+    22.5% { transform: rotate(4.94deg); }
+    25% { transform: rotate(5deg); }
+    27.5% { transform: rotate(4.94deg); }
+    30% { transform: rotate(4.76deg); }
+    32.5% { transform: rotate(4.46deg); }
+    35% { transform: rotate(4.05deg); }
+    37.5% { transform: rotate(3.54deg); }
+    40% { transform: rotate(2.94deg); }
+    42.5% { transform: rotate(2.27deg); }
+    45% { transform: rotate(1.55deg); }
+    47.5% { transform: rotate(0.78deg); }
+    50% { transform: rotate(0deg); }
+    52.5% { transform: rotate(-0.78deg); }
+    55% { transform: rotate(-1.55deg); }
+    57.5% { transform: rotate(-2.27deg); }
+    60% { transform: rotate(-2.94deg); }
+    62.5% { transform: rotate(-3.54deg); }
+    65% { transform: rotate(-4.05deg); }
+    67.5% { transform: rotate(-4.46deg); }
+    70% { transform: rotate(-4.76deg); }
+    72.5% { transform: rotate(-4.94deg); }
+    75% { transform: rotate(-5deg); }
+    77.5% { transform: rotate(-4.94deg); }
+    80% { transform: rotate(-4.76deg); }
+    82.5% { transform: rotate(-4.46deg); }
+    85% { transform: rotate(-4.05deg); }
+    87.5% { transform: rotate(-3.54deg); }
+    90% { transform: rotate(-2.94deg); }
+    92.5% { transform: rotate(-2.27deg); }
+    95% { transform: rotate(-1.55deg); }
+    97.5% { transform: rotate(-0.78deg); }
+    100% { transform: rotate(0deg); }
+  }
+  /* LOGO-ASSET:END */
 .loading-msg {
-  font-size: 0.7rem; letter-spacing: 0.1em;
+  font-size: 0.95rem; letter-spacing: 0.1em;
   color: var(--text-dim);
   text-transform: uppercase;
 }

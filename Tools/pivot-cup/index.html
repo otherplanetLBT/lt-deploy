@@ -273,17 +273,9 @@
                         linear-gradient(90deg, var(--border) 1px, transparent 1px);
       background-size: 40px 40px; opacity: 0.15; pointer-events: none;
     }
-    .loading-overlay {
-      position: absolute; inset: 0; z-index: 5;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-      background: rgba(8,10,16,0.9); opacity: 0; transition: opacity 0.25s; pointer-events: none;
-    }
-    .loading-overlay.visible { opacity: 1; pointer-events: all; }
-    .loading-ring {
-      width: 40px; height: 40px; border: 2px solid var(--border2);
-      border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite;
-    }
-    .loading-msg { font-size: 0.75rem; color: var(--text-dim); letter-spacing: 0.05em; }
+    /* .loading-overlay / .loading-ring / .loading-msg intentionally not
+       overridden here — shared.css is the single source of truth so this
+       overlay stays visually identical to riser-pad's. */
     .viewport-hint {
       position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
       font-size: 0.62rem; color: var(--text-dim); background: rgba(8,10,16,0.75);
@@ -495,7 +487,7 @@
       <canvas id="canvas"></canvas>
       <div class="loading-overlay visible" id="loading-overlay">
         <div class="loading-ring"></div>
-        <div class="loading-msg" id="loading-msg">Building mesh…</div>
+        <div class="loading-msg" id="loading-msg">Generating preview…</div>
         <div class="loading-sub" id="loading-sub"></div>
       </div>
       <div class="viewport-status" id="viewport-status"></div>
