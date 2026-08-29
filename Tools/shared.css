@@ -400,6 +400,13 @@ a { color: inherit; }
   display: none;
 }
 .spinner.visible { display: block; }
+/* Spinner on a transparent/secondary button. The base .spinner is tuned for the
+   accent-filled primary button, where navy reads against green; on a ghost button
+   that would be navy on navy, so track the button's own text colour instead. */
+.spinner-ghost {
+  border-color: rgba(255, 255, 255, 0.22);
+  border-top-color: currentColor;
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Page load-in animation — pages stagger nav → header → sidebar → viewport

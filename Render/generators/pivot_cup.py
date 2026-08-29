@@ -16,7 +16,9 @@ Modes:
               socket_depth is total height including the half-cone.
               Hard constraint: socket_depth - pivot_l >= MIN_CEILING_MM.
   hemi      — Outer shell is cylinder + hemispherical dome of radius r_outer.
-              Hard constraint: pivot_l < socket_depth - r_outer.
+              Hard constraints: the shared ceiling rule, plus MIN_WALL_MM of
+              measured material beside the bore equator (the dome's flank curves
+              in, so the flat wall rule doesn't describe it).
   tube      — Simple hollow cylinder. No cavity, no top geometry.
               Parameters: socket_d, pivot_d, socket_depth only.
 """
@@ -56,6 +58,41 @@ ALL_MODES = {'pointed', 'flat', 'hemi', 'tube'}
 
 def _cone_height(sd):
     return (sd / 2.0) * math.tan(math.radians(CONE_DEG))
+
+
+# ── Hemi clearance ────────────────────────────────────────────────────────────
+# The old hemi rule was `pivot_l < socket_depth - socket_d/2` — "the dome cannot
+# overlap the cavity". It forced the cavity roof below the dome's equator plane,
+# which pinned the minimum ceiling to r_outer (6.05 mm on a 12.1 mm cup, ~3x
+# thicker than printing needs) and had nothing to do with MIN_CEILING_MM. It also
+# measured the wrong thing: the cavity roof is not a disc of radius r_outer — the
+# OVERHANG_DEG blend narrows it to a flat of radius ~0.364 * r_inner.
+#
+# Ceiling thickness is now the same `socket_depth - pivot_l` rule the other cup
+# modes use (see CONSTRAINTS). Every cup mode has a sloping top, so that figure
+# always reads a little high at the roof's outer edge — 0 mm on flat, up to
+# 0.41 mm on hemi, 0.72-1.58 mm on pointed. That slack is the project's baked-in
+# compromise and MIN_CEILING_MM is sized to absorb it (see
+# Design Documents/PIVOT_CUP_GENERATOR.md).
+#
+# What hemi still needs on its own is the check below. Once the cavity rises past
+# the dome's equator the outer surface starts curving inward, so the flat
+# `(socket_d - pivot_d)/2` wall rule stops describing the real wall there. No
+# other cup mode has that failure — their tops sit above a full-radius cylinder.
+
+def _shell_clearance(r, z, sd, sdep):
+    """Material between an inner point [r, z] and the hemi outer shell."""
+    r_outer       = sd / 2.0
+    dome_center_z = sdep - r_outer
+    if z <= dome_center_z:
+        return r_outer - r                              # cylindrical body
+    return r_outer - math.hypot(r, z - dome_center_z)   # dome
+
+
+def _hemi_bore_wall(pd, pl, sd, sdep):
+    """Material beside the bore equator — the cavity's widest point."""
+    r_inner = pd / 2.0
+    return _shell_clearance(r_inner, pl - r_inner, sd, sdep)
 
 
 CONSTRAINTS = [
@@ -114,14 +151,15 @@ CONSTRAINTS = [
         ),
     },
 
-    # ── Pointed + Flat: ceiling thickness ─────────────────────────────────────
-    # In flat mode this is the literal flat-roof thickness above the pivot pin.
-    # In pointed mode it's the height from pin tip to the cone's apex; below
-    # MIN_CEILING_MM the cone tip becomes too close to the pin and prints poorly.
-    # Hemi mode has its own clearance rule (dome must clear the cavity); tube
-    # has no top so ceiling thickness doesn't apply.
+    # ── All cup modes: ceiling thickness ──────────────────────────────────────
+    # One rule for pointed, flat and hemi: the material over the pin, measured on
+    # the centre line. In flat mode that is the literal flat-roof thickness; in
+    # pointed it is the height from pin tip to the cone's apex; in hemi, to the
+    # dome's apex. Every one of those tops slopes, so the real thinnest ceiling at
+    # the roof's outer edge is a little less than this figure — MIN_CEILING_MM is
+    # sized to absorb that. Tube has no top, so it has no ceiling rule.
     {
-        'modes':     {'pointed', 'flat'},
+        'modes':     CUP_MODES,
         'condition': lambda m,pd,pl,sd,sdep: (sdep - pl) < MIN_CEILING_MM - EPS_FP_MM,
         'user_msg':  (
             f"Ceiling is too thin — Socket Depth minus Pivot Depth must be at least "
@@ -129,13 +167,13 @@ CONSTRAINTS = [
         ),
     },
 
-    # ── Hemi only: dome must clear cavity ─────────────────────────────────────
+    # ── Hemi only: the bore must stay inside the curving dome flank ───────────
     {
         'modes':     {'hemi'},
-        'condition': lambda m,pd,pl,sd,sdep: pl >= (sdep - sd / 2.0),
+        'condition': lambda m,pd,pl,sd,sdep: _hemi_bore_wall(pd,pl,sd,sdep) < MIN_WALL_MM - EPS_FP_MM,
         'user_msg':  (
-            "Pivot Depth must be less than Socket Depth minus the dome radius "
-            "(Socket Diameter ÷ 2) — the dome cannot overlap the cavity."
+            f"Wall is too thin where the bore meets the dome — at least {MIN_WALL_MM} mm "
+            f"is needed. Reduce Pivot Depth or Pivot Diameter, or increase Socket Depth."
         ),
     },
 ]

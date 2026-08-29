@@ -516,7 +516,8 @@
             <div class="spinner" id="spinner"></div>
           </button>
           <button class="btn btn-secondary" id="btn-download" disabled>
-            Download STL
+            <span id="btn-download-label">Download STL</span>
+            <div class="spinner spinner-ghost" id="download-spinner"></div>
           </button>
         </div>
         <button class="btn-feedback" id="btn-feedback" type="button">Mission report</button>
@@ -576,7 +577,44 @@ const state = {
   flipAngle:    false,    // when true, effective angle is negated before API call
   unit:         'mm',
   stlBlob:      null,
+  stlParams:    null,   // previewKey() the held blob was built at
 };
+
+// ── Download / preview coherence ──────────────────────────────────────────────
+// Download serves state.stlBlob — the mesh from the last successful preview — but
+// builds the filename from the CURRENT effective values at click time. Dragging a
+// slider after previewing shipped the old mesh under a filename describing a
+// different pad, with the viewport showing the same stale geometry. Keying the
+// blob to the parameters it was built from and dropping it the moment they
+// diverge closes that off at every entry point. (Mirrors the pivot cup.)
+function previewKey() {
+  return [state.style, +state.heightEff.toFixed(3), +signedAngle().toFixed(3)].join('|');
+}
+
+let downloadBusy = false;
+
+// Drop the held mesh. Callers used to also disable Download by hand; that would
+// now strand the button if the follow-up preview failed, since Download is what
+// regenerates. syncDownloadState() owns the button.
+function invalidateMesh() {
+  state.stlBlob   = null;
+  state.stlParams = null;
+  syncDownloadState();
+}
+
+function syncDownloadState() {
+  if (state.stlBlob && state.stlParams !== previewKey()) {
+    state.stlBlob   = null;
+    state.stlParams = null;
+  }
+  // Download is not a readout of "is a mesh ready" — it generates one on demand
+  // (see the click handler). Unlike the pivot cup this page has no validity flag:
+  // its soft-clamp leaves every height/angle pair buildable, so the button is
+  // always live. Don't fight the click handler mid-generate.
+  if (!downloadBusy) {
+    document.getElementById('btn-download').disabled = false;
+  }
+}
 
 // Signed angle — applied after all constraint logic. Only place that reads flipAngle.
 function signedAngle() {
@@ -638,6 +676,7 @@ function recompute() {
   });
 
   updateStats();
+  syncDownloadState();
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -800,16 +839,14 @@ const angleCtrl = LT.SliderControl({
       state.angleStored = clamp(mag, r.min, r.max);
       angleCtrl.setStoredMM(state.angleStored, false);
       recompute();
-      state.stlBlob = null;
-      document.getElementById('btn-download').disabled = true;
+      invalidateMesh();
       runPreview(true);
     } else if (state.flipAngle) {
       // Positive typed while flipped → un-flip; SliderControl already set angleStored correctly
       state.flipAngle = false;
       updateFlipBtn();
       recompute();
-      state.stlBlob = null;
-      document.getElementById('btn-download').disabled = true;
+      invalidateMesh();
       runPreview(true);
     }
   }
@@ -858,8 +895,7 @@ flipBtn.addEventListener('click', () => {
   state.flipAngle = !state.flipAngle;
   updateFlipBtn();
   recompute();   // update display immediately before the async fetch starts
-  state.stlBlob = null;
-  document.getElementById('btn-download').disabled = true;
+  invalidateMesh();
   runPreview(true);
 });
 
@@ -888,8 +924,7 @@ function setStyle(id) {
   state.style     = id;                          // raw stem — what the API resolves
   state.styleName = (meta && meta.name) || id;   // display name — safe for filenames
   renderCredit(meta);
-  state.stlBlob = null;
-  document.getElementById('btn-download').disabled = true;
+  invalidateMesh();
   runPreview(true);
 }
 
@@ -1076,6 +1111,7 @@ async function runPreview(auto) {
   const controller = new AbortController();
   currentAbortController = controller;
   let timedOut = false;
+  let ok       = false;   // did this call leave a usable mesh behind?
 
   btn.disabled = true; lbl.textContent = 'Generating…'; sp.classList.add('visible');
   viewport.setLoading(true, 'Generating preview…', '');
@@ -1089,6 +1125,7 @@ async function runPreview(auto) {
     controller.abort();
   }, REQUEST_TIMEOUT_MS);
   try {
+    const requestKey = previewKey();   // snapshot BEFORE awaiting — state can move meanwhile
     const resp = await fetch('/api/riser-pad/slice', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1099,24 +1136,26 @@ async function runPreview(auto) {
       }),
       signal: controller.signal,
     });
-    if (myGeneration !== requestGeneration) return; // superseded while awaiting
+    if (myGeneration !== requestGeneration) return false; // superseded while awaiting
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       if (!auto) alert('Error: ' + (err.error || resp.statusText));
-      return;
+      return false;
     }
     const buf = await resp.arrayBuffer();
-    if (myGeneration !== requestGeneration) return; // superseded while awaiting
-    state.stlBlob = buf;
+    if (myGeneration !== requestGeneration) return false; // superseded while awaiting
+    state.stlBlob   = buf;
+    state.stlParams = requestKey;
     viewport.loadSTL(buf);
-    document.getElementById('btn-download').disabled = false;
+    syncDownloadState();   // controls may have moved while the request was in flight
     LT.logEvent({ type: 'preview', tool: 'riser-pad' });
+    ok = true;
   } catch (e) {
     if (e.name === 'AbortError') {
       if (timedOut && myGeneration === requestGeneration) {
         viewport.setLoading(true, 'Still not responding…', 'This is taking much longer than expected. Try Preview again in a moment.');
       }
-      return; // superseded or timed out — not a normal failure
+      return false; // superseded or timed out — not a normal failure
     }
     if (!auto) alert('Request failed: ' + e.message);
   } finally {
@@ -1127,12 +1166,39 @@ async function runPreview(auto) {
       if (!timedOut) viewport.setLoading(false);
     }
   }
+  return ok;
 }
 
 document.getElementById('btn-preview').addEventListener('click', () => runPreview(false));
 
-document.getElementById('btn-download').addEventListener('click', () => {
-  if (!state.stlBlob) return;
+// Download generates on demand rather than dead-ending: if the held mesh doesn't
+// match the current parameters (or there isn't one yet), fetch it first, then
+// save. The button is greyed out only for parameters that can't produce geometry.
+async function downloadSTL() {
+  if (downloadBusy) return;
+
+  if (!state.stlBlob || state.stlParams !== previewKey()) {
+    const btn  = document.getElementById('btn-download');
+    const lbl  = document.getElementById('btn-download-label');
+    const spin = document.getElementById('download-spinner');
+    downloadBusy = true;
+    btn.disabled = true; lbl.textContent = 'Generating\u2026'; spin.classList.add('visible');
+    let generated = false;
+    try   { generated = await runPreview(false); }
+    finally {
+      downloadBusy = false;
+      lbl.textContent = 'Download STL'; spin.classList.remove('visible');
+      btn.disabled = false;
+    }
+    if (!generated) return;                          // failed or superseded — already surfaced
+    if (state.stlParams !== previewKey()) return;    // controls moved while in flight
+  }
+  saveSTL();
+}
+
+document.getElementById('btn-download').addEventListener('click', downloadSTL);
+
+function saveSTL() {
   const a  = document.createElement('a');
   const hs = state.heightEff.toFixed(1).replace('.', 'p') + 'mm';
   // styleName, not style: attribution is site-time only and must never leak
@@ -1155,7 +1221,7 @@ document.getElementById('btn-download').addEventListener('click', () => {
       angle:         +signedAngle().toFixed(3),
     },
   });
-});
+}
 
 // ── Mission report ────────────────────────────────────────────────────────────
 document.getElementById('btn-feedback').addEventListener('click', () => {
